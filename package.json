@@ -1,0 +1,19 @@
+{
+  "name": "assemble",
+  "version": "0.1.0",
+  "description": "A 2D molecular self-assembly simulator: design molecules with charged edges and watch them assemble in a heat bath.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node test/geometry.test.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier2d-compat": "^0.19.3"
+  },
+  "devDependencies": {
+    "vite": "^8.2.1",
+    "playwright-core": "^1.55.0"
+  }
+}

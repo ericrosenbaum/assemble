@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>assemble — molecular self-assembly</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161d26;
+        --text: #dbe4ee;
+        --muted: #8b98a8;
+        --accent: #e8b04b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, sans-serif;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        padding: 10px 16px 6px;
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      header h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
+      header .sub { color: var(--muted); font-size: 12.5px; }
+      #layout {
+        display: flex;
+        gap: 12px;
+        padding: 0 12px 12px;
+        flex: 1;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: center;
+      }
+      #stage { position: relative; }
+      canvas#view {
+        background: #141a20;
+        border-radius: 10px;
+        max-width: min(92vw, 640px);
+        width: 100%;
+        height: auto;
+        touch-action: none;
+      }
+      #panel {
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 12px 14px;
+        width: 300px;
+        max-width: 92vw;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        font-size: 13.5px;
+      }
+      #panel label { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); }
+      #panel select, #panel input[type='number'] {
+        background: #0d1117;
+        color: var(--text);
+        border: 1px solid #2a3542;
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 13px;
+        max-width: 150px;
+      }
+      #panel input[type='range'] { flex: 1; accent-color: var(--accent); }
+      .row { display: flex; gap: 8px; }
+      button {
+        background: #223041;
+        color: var(--text);
+        border: 1px solid #31445c;
+        border-radius: 8px;
+        padding: 7px 12px;
+        font-size: 13.5px;
+        cursor: pointer;
+        flex: 1;
+      }
+      button.primary { background: var(--accent); color: #14202e; border-color: var(--accent); font-weight: 600; }
+      #stats { color: var(--muted); font-size: 12.5px; white-space: pre-line; line-height: 1.5; min-height: 60px; }
+      #designer-host { width: 100%; }
+      details summary { cursor: pointer; color: var(--accent); }
+      .hint { color: var(--muted); font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>assemble</h1>
+      <span class="sub">design charged molecules · watch them self-assemble in a heat bath</span>
+    </header>
+    <div id="layout">
+      <div id="stage"><canvas id="view" width="720" height="720"></canvas></div>
+      <div id="panel">
+        <label>scenario
+          <select id="scenario"></select>
+        </label>
+        <label>engine
+          <select id="engine">
+            <option value="rigid">rigid body (Rapier WASM)</option>
+            <option value="soft">soft body (particles+springs)</option>
+          </select>
+        </label>
+        <label>compute
+          <select id="backend">
+            <option value="auto">auto</option>
+            <option value="cpu">CPU</option>
+            <option value="webgl2">WebGL2 GPGPU</option>
+            <option value="webgpu">WebGPU (experimental)</option>
+          </select>
+        </label>
+        <label>molecules
+          <input type="number" id="count" min="2" max="120" step="1" value="24" />
+        </label>
+        <label>temperature
+          <input type="range" id="temp" min="0" max="4" step="0.05" value="2.5" />
+          <span id="tempVal">2.50</span>
+        </label>
+        <label>speed
+          <input type="range" id="speed" min="1" max="20" step="1" value="6" />
+          <span id="speedVal">6×</span>
+        </label>
+        <div class="row">
+          <button id="play" class="primary">▶ run</button>
+          <button id="anneal">anneal</button>
+          <button id="reset">reset</button>
+        </div>
+        <div id="stats">—</div>
+        <details id="designerDetails">
+          <summary>molecule designer</summary>
+          <div id="designer-host"></div>
+        </details>
+        <div class="hint" id="backendHint"></div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
