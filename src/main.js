@@ -186,8 +186,9 @@ window.__assemble = {
     await makeEngine();
     return { ok: true, molecules: state.engine.instances.length };
   },
-  stepN(n) {
+  async stepN(n) {
     for (let i = 0; i < n; i++) state.engine.step();
+    await state.engine.flush?.(); // async backends (WebGPU) sync positions
     draw();
     return state.engine.stepCount;
   },
@@ -197,6 +198,14 @@ window.__assemble = {
   stats() {
     updateStats();
     return { ...stats(state.engine.chargeWorld()), step: state.engine.stepCount, kT: state.engine.params.kT };
+  },
+  async parity(opts) {
+    const { runParity } = await import('./sim/soft/parity.js');
+    return runParity(opts);
+  },
+  async bench(opts) {
+    const { benchBackends } = await import('./sim/soft/parity.js');
+    return benchBackends(opts);
   },
 };
 

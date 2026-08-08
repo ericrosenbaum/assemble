@@ -140,7 +140,25 @@ export class SoftEngineCPU extends BaseEngine {
     });
     // spatial hash sized to WCA cutoff
     this._cell = this.params.sigma * 1.4;
+    this._settle();
     this.ready = Promise.resolve(this);
+  }
+
+  // resolve any initial overlaps gently: heavily damped, zero-temperature
+  // relaxation before the real run starts
+  _settle() {
+    const saved = { kT: this.params.kT, gamma: this.params.gamma };
+    const schedule = this.schedule;
+    this.schedule = null;
+    this.params.kT = 0;
+    this.params.gamma = 30;
+    // always the CPU step, even in GPU subclasses (runs before GL init)
+    for (let i = 0; i < 40; i++) SoftEngineCPU.prototype.step.call(this);
+    this.stepCount = 0;
+    this.time = 0;
+    this.params.kT = saved.kT;
+    this.params.gamma = saved.gamma;
+    this.schedule = schedule;
   }
 
   computeForces() {
@@ -191,10 +209,16 @@ export class SoftEngineCPU extends BaseEngine {
           for (const j of arr) {
             if (j <= i) continue;
             if (L.mol[i] === L.mol[j]) continue;
+            // opposite-charge "sticky sites" are exempt from contact
+            // repulsion so they can bind at close range (their uncharged
+            // neighbors still keep the molecules from interpenetrating)
+            if (L.q[i] * L.q[j] < 0) continue;
             const dx = L.x[i] - L.x[j];
             const dy = L.y[i] - L.y[j];
-            const r2 = dx * dx + dy * dy;
+            let r2 = dx * dx + dy * dy;
             if (r2 > rc2 || r2 === 0) continue;
+            // cap the r^-12 blowup so initial overlaps resolve instead of exploding
+            if (r2 < 0.49 * s2) r2 = 0.49 * s2;
             const inv2 = s2 / r2;
             const inv6 = inv2 * inv2 * inv2;
             // WCA: F = 24 eps (2 s^12/r^13 - s^6/r^7) rhat, force/r form:
@@ -249,11 +273,18 @@ export class SoftEngineCPU extends BaseEngine {
     const kick = Math.sqrt((2 * gamma * kT) / dt); // force-scale kick, m=1
     for (let sub = 0; sub < nSub; sub++) {
       this.computeForces();
+      const vMax = 80; // safety clamp against numerical blowups
       for (let i = 0; i < L.n; i++) {
         const ax = this.fx[i] - gamma * L.vx[i] + kick * this.rng.gauss();
         const ay = this.fy[i] - gamma * L.vy[i] + kick * this.rng.gauss();
         L.vx[i] += ax * dt;
         L.vy[i] += ay * dt;
+        const v2 = L.vx[i] * L.vx[i] + L.vy[i] * L.vy[i];
+        if (v2 > vMax * vMax) {
+          const f = vMax / Math.sqrt(v2);
+          L.vx[i] *= f;
+          L.vy[i] *= f;
+        }
         L.x[i] += L.vx[i] * dt;
         L.y[i] += L.vy[i] * dt;
       }

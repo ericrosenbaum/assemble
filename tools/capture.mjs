@@ -26,6 +26,8 @@ const cfg = {
   size: Number(args.size ?? 540),
   out: args.out ?? 'out/run',
   overrides: args.overrides ? JSON.parse(args.overrides) : {},
+  // stop early once at least N closed rings have persisted for 15 frames
+  stopRings: args.stopRings ? Number(args.stopRings) : 0,
 };
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.css': 'text/css' };
@@ -77,17 +79,26 @@ console.log('init:', JSON.stringify(init));
 const nFrames = Math.ceil(cfg.steps / cfg.every);
 const statsLog = [];
 const t0 = Date.now();
+let ringStreak = 0;
 for (let f = 0; f <= nFrames; f++) {
   if (f > 0) await page.evaluate((n) => window.__assemble.stepN(n), cfg.every);
   const dataUrl = await page.evaluate(() => window.__assemble.frame());
   const png = Buffer.from(dataUrl.split(',')[1], 'base64');
   fs.writeFileSync(path.join(outDir, `frame_${String(f).padStart(4, '0')}.png`), png);
-  if (f % 20 === 0 || f === nFrames) {
+  if (cfg.stopRings || f % 20 === 0 || f === nFrames) {
     const st = await page.evaluate(() => window.__assemble.stats());
     statsLog.push(st);
-    console.log(
-      `frame ${f}/${nFrames}  step ${st.step}  T=${st.kT.toFixed(2)}  bonded=${st.bonded}  largest=${st.largest}  rings=[${st.rings}]`,
-    );
+    if (f % 20 === 0 || f === nFrames)
+      console.log(
+        `frame ${f}/${nFrames}  step ${st.step}  T=${st.kT.toFixed(2)}  bonded=${st.bonded}  largest=${st.largest}  rings=[${st.rings}]`,
+      );
+    if (cfg.stopRings) {
+      ringStreak = st.rings.length >= cfg.stopRings ? ringStreak + 1 : 0;
+      if (ringStreak >= 15) {
+        console.log(`early stop: ${st.rings.length} rings stable at frame ${f} (step ${st.step})`);
+        break;
+      }
+    }
   }
 }
 const st = await page.evaluate(() => window.__assemble.stats());
