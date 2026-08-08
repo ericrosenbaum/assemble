@@ -1,5 +1,7 @@
 # assemble
 
+**▶ Live: https://ericrosenbaum.github.io/assemble/**
+
 A 2D molecular self-assembly simulator that runs entirely in the browser.
 Design molecules as polygons with electrostatic charges on their edges, drop
 many copies into a thermal heat bath, and watch ordered structures — rings,
