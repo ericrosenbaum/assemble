@@ -44,6 +44,12 @@ switch between them live in the UI:
   from contact repulsion so they can bind at close range, like patchy
   colloids.
 
+![soft engine ring](results/wedge8_ring_soft.gif)
+
+*The same wedge experiment on the soft-body engine: joints zip up one
+sticky-site pair at a time and the finished ring is charmingly organic,
+where the rigid engine's rings are crisp octagons.*
+
 ## Hardware acceleration
 
 The soft engine's per-particle forces are embarrassingly parallel, so it has
