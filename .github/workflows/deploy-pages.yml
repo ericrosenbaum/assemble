@@ -7,18 +7,20 @@ on:
       - main
   workflow_dispatch:
 
+# Publishes by force-pushing the build to the gh-pages branch, which is the
+# repo's Pages source. The artifact-based Pages deploy (actions/deploy-pages)
+# is not usable here: creating a Pages site needs administration:write, which
+# GITHUB_TOKEN can never hold, and once Pages is enabled from a branch its
+# github-pages environment only permits deployments from that branch.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Let a running deploy finish rather than cancelling it mid-publish.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,21 +30,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # enablement: true creates the Pages site on first run, so no manual
-      # Settings -> Pages toggle is needed
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to gh-pages
+        run: |
+          set -e
+          touch dist/.nojekyll
+          cd dist
+          # Fresh orphan history each deploy so the branch never accumulates
+          # old build artifacts.
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA:0:7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
