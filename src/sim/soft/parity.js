@@ -60,7 +60,7 @@ export async function runParity({ steps = 40, count = 6 } = {}) {
     cpu.step();
     gpu.step();
   }
-  gpu._sync();
+  gpu._sync(true); // block: the comparison must reflect exactly `steps` steps
   let maxDev = 0;
   for (let i = 0; i < cpu.L.n; i++) {
     maxDev = Math.max(maxDev, Math.hypot(cpu.L.x[i] - gpu.L.x[i], cpu.L.y[i] - gpu.L.y[i]));

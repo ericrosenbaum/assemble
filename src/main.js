@@ -5,11 +5,15 @@
 import { buildScenario, SCENARIOS } from './presets.js';
 import { RigidEngine } from './sim/rigid/rapier.js';
 import { createSoftEngine, detectBackends } from './sim/soft/index.js';
+import { WorkerSim } from './sim/simclient.js';
 import { Renderer } from './render/draw.js';
 import { stats } from './sim/analysis.js';
 
 const qs = new URLSearchParams(location.search);
 const headless = qs.get('headless') === '1';
+// The headless capture harness drives stepping synchronously and needs
+// deterministic control of when steps happen, so it always runs in-thread.
+const useWorker = !headless && qs.get('worker') !== '0' && typeof Worker !== 'undefined';
 
 const el = (id) => document.getElementById(id);
 const canvas = el('view');
@@ -24,6 +28,7 @@ const state = {
   scenarioName: qs.get('scenario') || 'wedge-8',
   stepsPerFrame: 6,
   overrides: {},
+  maxSpeed: false,
 };
 
 for (const [name, s] of Object.entries(SCENARIOS)) {
@@ -39,6 +44,29 @@ el('backend').value = state.backend;
 async function makeEngine() {
   const sc = buildScenario(state.scenarioName, state.overrides);
   state.scenario = sc;
+
+  if (useWorker) {
+    const sim = new WorkerSim();
+    await sim.init({
+      scenario: state.scenarioName,
+      engineKind: state.engineKind,
+      backend: state.backend,
+      overrides: state.overrides,
+    });
+    // The worker drives its own pace; just repaint whenever a snapshot lands.
+    sim.onSnapshot(() => {
+      draw();
+      updateStats();
+    });
+    state.engine = sim;
+    state.renderer = new Renderer(canvas, sc.box);
+    el('count').value = String(sim.instances.length);
+    draw();
+    updateStats();
+    if (state.running) sim.run();
+    return sim;
+  }
+
   const opts = {
     specs: sc.specs,
     instances: sc.instances,
@@ -64,15 +92,20 @@ function draw() {
 
 function updateStats() {
   if (!state.engine) return;
-  const sites = state.engine.chargeWorld();
-  const st = stats(sites);
+  // In worker mode the stats come with the snapshot (computed off the main
+  // thread); in-thread we compute them here.
+  const st = state.engine.stats ?? stats(state.engine.chargeWorld());
+  if (!st) return;
   const rings = st.rings.length
     ? `rings: ${st.rings.map((r) => `${r}-ring`).join(', ')}`
     : 'rings: none yet';
+  const rate = state.engine.stepsPerSec
+    ? `   ${state.engine.stepsPerSec.toLocaleString()} steps/s`
+    : '';
   el('stats').textContent =
     `${rings}\n` +
     `bonded molecules: ${st.bonded}/${state.engine.instances.length}   clusters: ${st.clusters}\n` +
-    `largest cluster: ${st.largest}   backend: ${state.engine.backendName ?? state.engine.kind}`;
+    `largest cluster: ${st.largest}   backend: ${state.engine.backendName ?? state.engine.kind}${rate}`;
   el('tempVal').textContent = state.engine.params.kT.toFixed(2);
   el('temp').value = String(state.engine.params.kT);
 }
@@ -91,7 +124,17 @@ function loop() {
 el('play').addEventListener('click', () => {
   state.running = !state.running;
   el('play').textContent = state.running ? '⏸ pause' : '▶ run';
-  if (state.running) requestAnimationFrame(loop);
+  if (state.engine?.kind === 'worker') {
+    state.running ? state.engine.run() : state.engine.pause();
+  } else if (state.running) {
+    requestAnimationFrame(loop);
+  }
+});
+el('maxSpeed').addEventListener('change', (e) => {
+  state.maxSpeed = e.target.checked;
+  state.engine?.setMaxSpeed?.(state.maxSpeed);
+  // in-thread mode has no worker to run flat out; widen the per-frame batch
+  el('speed').disabled = state.maxSpeed;
 });
 el('reset').addEventListener('click', async () => {
   state.engine?.free?.();
@@ -99,8 +142,12 @@ el('reset').addEventListener('click', async () => {
 });
 el('anneal').addEventListener('click', () => {
   if (!state.engine) return;
-  state.engine.stepCount = 0;
-  state.engine.schedule = state.scenario.schedule;
+  if (state.engine.kind === 'worker') {
+    state.engine.anneal(state.scenario.def.schedule);
+  } else {
+    state.engine.stepCount = 0;
+    state.engine.schedule = state.scenario.schedule;
+  }
 });
 el('scenario').addEventListener('change', async (e) => {
   state.scenarioName = e.target.value;
@@ -127,9 +174,14 @@ el('count').addEventListener('change', async (e) => {
 });
 el('temp').addEventListener('input', (e) => {
   if (!state.engine) return;
-  state.engine.schedule = null; // manual control overrides annealing
-  state.engine.params.kT = Number(e.target.value);
-  el('tempVal').textContent = state.engine.params.kT.toFixed(2);
+  const kT = Number(e.target.value);
+  if (state.engine.kind === 'worker') {
+    state.engine.setParams({ kT }, { clearSchedule: true }); // manual overrides annealing
+  } else {
+    state.engine.schedule = null;
+    state.engine.params.kT = kT;
+  }
+  el('tempVal').textContent = kT.toFixed(2);
 });
 el('speed').addEventListener('input', (e) => {
   state.stepsPerFrame = Number(e.target.value);
@@ -210,10 +262,11 @@ window.__assemble = {
 };
 
 if (!headless) {
-  makeEngine().then(() => {
-    // start running by default so the app feels alive
-    state.running = true;
-    el('play').textContent = '⏸ pause';
-    requestAnimationFrame(loop);
+  // start running by default so the app feels alive
+  state.running = true;
+  el('play').textContent = '⏸ pause';
+  makeEngine().then((engine) => {
+    if (engine.kind === 'worker') engine.run();
+    else requestAnimationFrame(loop);
   });
 }

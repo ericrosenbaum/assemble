@@ -277,6 +277,11 @@ export class SoftEngineWebGL2 extends SoftEngineCPU {
       this.uni[name] = gl.getUniformLocation(prog, name);
 
     this._readBuf = new Float32Array(cap * 4);
+    this.packBuf = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.packBuf);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, this._readBuf.byteLength, gl.STREAM_READ);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._fence = null;
     this._gpuSeed = (this.seed * 2654435761) >>> 0;
   }
 
@@ -334,37 +339,83 @@ export class SoftEngineWebGL2 extends SoftEngineCPU {
     this.time += params.dt;
   }
 
-  _sync() {
-    if (!this._dirty) return;
-    const { gl, L } = this;
+  // Positions are pulled back through a pixel-pack buffer guarded by a fence,
+  // so the CPU never blocks waiting for the GPU. A plain readPixels into a
+  // typed array stalls the pipeline until every queued substep has finished,
+  // which on real hardware costs far more than the physics itself.
+  //
+  // The trade-off is that rendering can lag the simulation by a frame. That is
+  // invisible at interactive rates and irrelevant to correctness, since the
+  // authoritative state lives in the GPU textures either way.
+  _startReadback() {
+    const { gl } = this;
+    if (this._fence || !this._dirty) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo[this.cur]);
     gl.readBuffer(gl.COLOR_ATTACHMENT0);
-    gl.readPixels(0, 0, this.texW, this.texH, gl.RGBA, gl.FLOAT, this._readBuf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.packBuf);
+    gl.readPixels(0, 0, this.texW, this.texH, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this._fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    this._dirty = false;
+    gl.flush();
+  }
+
+  // Consume a completed readback if one is ready. `block` forces a wait, which
+  // the parity test needs to compare an exact step count against the CPU.
+  _pollReadback(block = false) {
+    const { gl, L } = this;
+    if (!this._fence) return false;
+    const status = gl.clientWaitSync(this._fence, 0, block ? 1e8 : 0);
+    if (status === gl.TIMEOUT_EXPIRED) return false;
+    gl.deleteSync(this._fence);
+    this._fence = null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.packBuf);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this._readBuf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     for (let i = 0; i < L.n; i++) {
       L.x[i] = this._readBuf[i * 4];
       L.y[i] = this._readBuf[i * 4 + 1];
     }
-    this._dirty = false;
+    return true;
   }
 
+  _sync(block = true) {
+    this._startReadback();
+    this._pollReadback(block);
+  }
+
+  // Called once per rendered frame by the worker loop; kicks off the next
+  // readback and picks up the previous one without ever blocking.
+  async flush() {
+    this._pollReadback(false);
+    this._startReadback();
+  }
+
+  // Read accessors take the freshest completed readback rather than stalling
+  // for the in-flight one — a frame of lag beats a pipeline bubble.
   poses() {
-    this._sync();
+    this._sync(false);
     return super.poses();
   }
 
   outlines() {
-    this._sync();
+    this._sync(false);
     return super.outlines();
   }
 
   chargeWorld() {
-    this._sync();
+    this._sync(false);
     return super.chargeWorld();
   }
 
   free() {
-    const ext = this.gl?.getExtension('WEBGL_lose_context');
-    ext?.loseContext();
+    const gl = this.gl;
+    if (gl && this._fence) {
+      gl.deleteSync(this._fence);
+      this._fence = null;
+    }
+    gl?.deleteBuffer(this.packBuf);
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

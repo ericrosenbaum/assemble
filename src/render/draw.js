@@ -39,47 +39,67 @@ export class Renderer {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(ox - (this.box.w / 2) * s, oy - (this.box.h / 2) * s, this.box.w * s, this.box.h * s);
 
+    // Molecules, grouped by spec so each colour costs one fill and one stroke
+    // rather than a pair per molecule.
     const outlines = engine.outlines();
+    const bySpec = new Map();
     for (let i = 0; i < outlines.length; i++) {
-      const poly = outlines[i];
       const specIdx = engine.instances[i].spec;
-      const color = engine.specs[specIdx].color || PALETTE[specIdx % PALETTE.length];
-      ctx.beginPath();
+      let path = bySpec.get(specIdx);
+      if (!path) bySpec.set(specIdx, (path = new Path2D()));
+      const poly = outlines[i];
       for (let j = 0; j < poly.length; j++) {
         const X = ox + poly[j][0] * s;
         const Y = oy - poly[j][1] * s;
-        if (j === 0) ctx.moveTo(X, Y);
-        else ctx.lineTo(X, Y);
+        if (j === 0) path.moveTo(X, Y);
+        else path.lineTo(X, Y);
       }
-      ctx.closePath();
+      path.closePath();
+    }
+    ctx.lineWidth = Math.max(1, 0.18 * s);
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    for (const [specIdx, path] of bySpec) {
+      const color = engine.specs[specIdx].color || PALETTE[specIdx % PALETTE.length];
       ctx.fillStyle = color + 'cc';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = Math.max(1, 0.18 * s);
-      ctx.stroke();
+      ctx.fill(path);
+      ctx.stroke(path);
     }
 
-    // charge sites
+    // Charge sites, batched: one path per sign instead of a fill+stroke pair
+    // per site (which was 12 canvas calls per molecule).
     const sites = engine.chargeWorld();
     const r = Math.max(1.5, 0.42 * s);
+    const pos = new Path2D();
+    const neg = new Path2D();
+    const glyphs = new Path2D();
+    // Below a few pixels the +/- glyph is indistinguishable, so skip it and
+    // let the dot colour carry the sign.
+    const drawGlyphs = r >= 3;
+    const g = r * 0.5;
     for (let i = 0; i < sites.count; i++) {
       const X = ox + sites.x[i] * s;
       const Y = oy - sites.y[i] * s;
-      ctx.beginPath();
-      ctx.arc(X, Y, r, 0, Math.PI * 2);
-      ctx.fillStyle = sites.q[i] > 0 ? '#ff5c5c' : '#5ca8ff';
-      ctx.fill();
-      // +/- glyph
+      const positive = sites.q[i] > 0;
+      const p = positive ? pos : neg;
+      p.moveTo(X + r, Y);
+      p.arc(X, Y, r, 0, Math.PI * 2);
+      if (drawGlyphs) {
+        glyphs.moveTo(X - g, Y);
+        glyphs.lineTo(X + g, Y);
+        if (positive) {
+          glyphs.moveTo(X, Y - g);
+          glyphs.lineTo(X, Y + g);
+        }
+      }
+    }
+    ctx.fillStyle = '#ff5c5c';
+    ctx.fill(pos);
+    ctx.fillStyle = '#5ca8ff';
+    ctx.fill(neg);
+    if (drawGlyphs) {
       ctx.strokeStyle = 'rgba(0,0,0,0.7)';
       ctx.lineWidth = Math.max(1, r * 0.28);
-      ctx.beginPath();
-      ctx.moveTo(X - r * 0.5, Y);
-      ctx.lineTo(X + r * 0.5, Y);
-      if (sites.q[i] > 0) {
-        ctx.moveTo(X, Y - r * 0.5);
-        ctx.lineTo(X, Y + r * 0.5);
-      }
-      ctx.stroke();
+      ctx.stroke(glyphs);
     }
 
     if (hud) {
