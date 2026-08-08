@@ -12,8 +12,8 @@
 // The typed-array state layout here is the reference the GPU backends mirror.
 
 import { BaseEngine } from '../engine.js';
-import { pairForce } from '../electrostatics.js';
 import { makeRng } from '../../rng.js';
+import { CellGrid } from '../cellgrid.js';
 
 const TARGET_SPACING = 1.5; // perimeter particle spacing (world units)
 
@@ -138,8 +138,19 @@ export class SoftEngineCPU extends BaseEngine {
       this._sites.q[k] = this.L.q[pi];
       this._sites.mol[k] = this.L.mol[pi];
     });
-    // spatial hash sized to WCA cutoff
-    this._cell = this.params.sigma * 1.4;
+    // Two grids: contacts are very short-ranged (WCA cutoff ~1.12 sigma) while
+    // Coulomb reaches `cutoff`, so a single cell size would either scan huge
+    // cells for contacts or miss Coulomb neighbours.
+    this._gridWCA = new CellGrid({
+      box: this.box,
+      cell: this.params.sigma * Math.pow(2, 1 / 6),
+      capacity: this.L.n,
+    });
+    this._gridCoulomb = new CellGrid({
+      box: this.box,
+      cell: this.params.cutoff,
+      capacity: this.L.n,
+    });
     this._settle();
     this.ready = Promise.resolve(this);
   }
@@ -184,37 +195,47 @@ export class SoftEngineCPU extends BaseEngine {
       fy[j] -= f * dy;
     }
 
-    // WCA contact between particles of different molecules (spatial hash)
+    // WCA contact between particles of different molecules, via the
+    // preallocated cell grid (3x3 neighbourhood; cell size == WCA cutoff).
     const sigma = params.sigma;
     const eps = params.epsWCA;
     const rc = sigma * Math.pow(2, 1 / 6);
     const rc2 = rc * rc;
-    const cell = this._cell;
-    const hash = new Map();
-    const key = (cx, cy) => cx * 73856093 + cy * 19349663;
-    for (let i = 0; i < L.n; i++) {
-      const k = key(Math.floor(L.x[i] / cell), Math.floor(L.y[i] / cell));
-      let arr = hash.get(k);
-      if (!arr) hash.set(k, (arr = []));
-      arr.push(i);
-    }
     const s2 = sigma * sigma;
+    const g = this._gridWCA;
+    g.build(L.x, L.y, L.n);
+    const gItems = g.items;
+    const gStart = g.cellStart;
+    const gnx = g.nx;
+    const gny = g.ny;
     for (let i = 0; i < L.n; i++) {
-      const cx = Math.floor(L.x[i] / cell);
-      const cy = Math.floor(L.y[i] / cell);
-      for (let ox = -1; ox <= 1; ox++) {
-        for (let oy = -1; oy <= 1; oy++) {
-          const arr = hash.get(key(cx + ox, cy + oy));
-          if (!arr) continue;
-          for (const j of arr) {
+      const cx = g.cellX(L.x[i]);
+      const cy = g.cellY(L.y[i]);
+      const xi = L.x[i];
+      const yi = L.y[i];
+      const mi = L.mol[i];
+      const qi = L.q[i];
+      let fxi = 0;
+      let fyi = 0;
+      const y0 = cy > 0 ? cy - 1 : 0;
+      const y1 = cy < gny - 1 ? cy + 1 : gny - 1;
+      const x0 = cx > 0 ? cx - 1 : 0;
+      const x1 = cx < gnx - 1 ? cx + 1 : gnx - 1;
+      for (let ny = y0; ny <= y1; ny++) {
+        const rowBase = ny * gnx;
+        for (let nx = x0; nx <= x1; nx++) {
+          const c = rowBase + nx;
+          const end = gStart[c + 1];
+          for (let t = gStart[c]; t < end; t++) {
+            const j = gItems[t];
             if (j <= i) continue;
-            if (L.mol[i] === L.mol[j]) continue;
+            if (mi === L.mol[j]) continue;
             // opposite-charge "sticky sites" are exempt from contact
             // repulsion so they can bind at close range (their uncharged
             // neighbors still keep the molecules from interpenetrating)
-            if (L.q[i] * L.q[j] < 0) continue;
-            const dx = L.x[i] - L.x[j];
-            const dy = L.y[i] - L.y[j];
+            if (qi * L.q[j] < 0) continue;
+            const dx = xi - L.x[j];
+            const dy = yi - L.y[j];
             let r2 = dx * dx + dy * dy;
             if (r2 > rc2 || r2 === 0) continue;
             // cap the r^-12 blowup so initial overlaps resolve instead of exploding
@@ -223,32 +244,75 @@ export class SoftEngineCPU extends BaseEngine {
             const inv6 = inv2 * inv2 * inv2;
             // WCA: F = 24 eps (2 s^12/r^13 - s^6/r^7) rhat, force/r form:
             const fOverR = (24 * eps * inv6 * (2 * inv6 - 1)) / r2;
-            fx[i] += fOverR * dx;
-            fy[i] += fOverR * dy;
-            fx[j] -= fOverR * dx;
-            fy[j] -= fOverR * dy;
+            const ax = fOverR * dx;
+            const ay = fOverR * dy;
+            fxi += ax;
+            fyi += ay;
+            fx[j] -= ax;
+            fy[j] -= ay;
           }
         }
       }
+      fx[i] += fxi;
+      fy[i] += fyi;
     }
 
-    // screened Coulomb between charged particles of different molecules
-    const ci = this._chargedIdx;
+    // Screened Coulomb between charged particles of different molecules, on
+    // its own grid (cell size == Coulomb cutoff, charged particles only).
+    // Force kernel inlined so there is no per-pair array allocation.
+    const cg = this._gridCoulomb;
+    cg.build(L.x, L.y, L.n, this._chargedIdx);
+    const cItems = cg.items;
+    const cStart = cg.cellStart;
+    const cnx = cg.nx;
+    const cny = cg.ny;
     const cut2 = params.cutoff * params.cutoff;
-    for (let a = 0; a < ci.length; a++) {
-      const i = ci[a];
-      for (let b = a + 1; b < ci.length; b++) {
-        const j = ci[b];
-        if (L.mol[i] === L.mol[j]) continue;
-        const dx = L.x[i] - L.x[j];
-        const dy = L.y[i] - L.y[j];
-        if (dx * dx + dy * dy > cut2) continue;
-        const [pfx, pfy] = pairForce(dx, dy, L.q[i] * L.q[j], params);
-        fx[i] += pfx;
-        fy[i] += pfy;
-        fx[j] -= pfx;
-        fy[j] -= pfy;
+    const soft2 = params.soft * params.soft;
+    const invLambda = 1 / params.lambda;
+    const kC = params.k;
+    const chargedIdx = this._chargedIdx;
+    for (let a = 0; a < chargedIdx.length; a++) {
+      const i = chargedIdx[a];
+      const cx = cg.cellX(L.x[i]);
+      const cy = cg.cellY(L.y[i]);
+      const xi = L.x[i];
+      const yi = L.y[i];
+      const mi = L.mol[i];
+      const qi = L.q[i];
+      let fxi = 0;
+      let fyi = 0;
+      const y0 = cy > 0 ? cy - 1 : 0;
+      const y1 = cy < cny - 1 ? cy + 1 : cny - 1;
+      const x0 = cx > 0 ? cx - 1 : 0;
+      const x1 = cx < cnx - 1 ? cx + 1 : cnx - 1;
+      for (let ny = y0; ny <= y1; ny++) {
+        const rowBase = ny * cnx;
+        for (let nx = x0; nx <= x1; nx++) {
+          const c = rowBase + nx;
+          const end = cStart[c + 1];
+          for (let t = cStart[c]; t < end; t++) {
+            const j = cItems[t];
+            if (j <= i) continue;
+            if (mi === L.mol[j]) continue;
+            const dx = xi - L.x[j];
+            const dy = yi - L.y[j];
+            const r2 = dx * dx + dy * dy;
+            if (r2 > cut2) continue;
+            const r = Math.sqrt(r2);
+            const rs = Math.sqrt(r2 + soft2);
+            const kq = kC * qi * L.q[j] * Math.exp(-r * invLambda);
+            const f = -(kq * (-invLambda / rs - r / (rs * rs * rs))) / (r + 1e-12);
+            const ax = f * dx;
+            const ay = f * dy;
+            fxi += ax;
+            fyi += ay;
+            fx[j] -= ax;
+            fy[j] -= ay;
+          }
+        }
       }
+      fx[i] += fxi;
+      fy[i] += fyi;
     }
 
     // walls: soft quadratic repulsion inside a margin

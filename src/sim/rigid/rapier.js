@@ -7,7 +7,7 @@
 
 import RAPIER from '@dimforge/rapier2d-compat';
 import { BaseEngine } from '../engine.js';
-import { accumulateChargeForces } from '../electrostatics.js';
+import { accumulateChargeForcesCulled, buildMoleculeIndex, siteSpread } from '../electrostatics.js';
 import { makeRng } from '../../rng.js';
 
 let rapierReady = null;
@@ -86,9 +86,40 @@ export class RigidEngine extends BaseEngine {
         s++;
       }
     });
+
+    // Body properties that never change — reading them per step would cost a
+    // WASM crossing each. localCom is the centre of mass in body frame; specs
+    // are centroid-centred with uniform density so it is ~(0,0), but caching
+    // the exact value keeps the batched torque origin correct regardless.
+    const n = this.bodies.length;
+    this._mass = new Float64Array(n);
+    this._inertia = new Float64Array(n);
+    this._localComX = new Float64Array(n);
+    this._localComY = new Float64Array(n);
+    for (let mi = 0; mi < n; mi++) {
+      const body = this.bodies[mi];
+      this._mass[mi] = body.mass();
+      this._inertia[mi] = body.effectiveAngularInertia?.() ?? this._mass[mi] * 8;
+      const lc = body.localCom?.();
+      this._localComX[mi] = lc?.x ?? 0;
+      this._localComY[mi] = lc?.y ?? 0;
+    }
+    this._px = new Float64Array(n);
+    this._py = new Float64Array(n);
+    this._cos = new Float64Array(n);
+    this._sin = new Float64Array(n);
+    this._poseStep = -1;
+    this._appliedGamma = -1; // forces damping to be set on the first step
+    // max over specs keeps the culling bound safe for mixed molecule sets
+    const spread = Math.max(...this.specs.map((s) => siteSpread(s)));
+    this._molIndex = buildMoleculeIndex(this.sites, n, spread);
+    this._imp = { x: 0, y: 0 }; // reused, so no per-step object allocation
     return this;
   }
 
+  // Reads each body's pose once per step and caches it, so the impulse pass
+  // and the renderer don't pay for further WASM crossings (and the object
+  // allocations Rapier's translation() returns).
   _updateSiteWorld() {
     let s = 0;
     for (let mi = 0; mi < this.bodies.length; mi++) {
@@ -97,47 +128,70 @@ export class RigidEngine extends BaseEngine {
       const a = body.rotation();
       const c = Math.cos(a);
       const sn = Math.sin(a);
+      this._px[mi] = p.x;
+      this._py[mi] = p.y;
+      this._cos[mi] = c;
+      this._sin[mi] = sn;
       for (const [lx, ly] of this._siteLocal[mi]) {
         this.sites.x[s] = p.x + lx * c - ly * sn;
         this.sites.y[s] = p.y + lx * sn + ly * c;
         s++;
       }
     }
+    this._poseStep = this.stepCount;
   }
 
   step() {
     this.applySchedule();
     const { dt, kT, gamma } = this.params;
 
-    // thermal kicks (Langevin): random impulse ~ N(0, sqrt(2 gamma m kT dt))
-    for (const body of this.bodies) {
-      const m = body.mass();
-      const I = body.effectiveAngularInertia?.() ?? m * 8; // fallback
-      const sLin = Math.sqrt(2 * gamma * m * kT * dt);
-      const sAng = Math.sqrt(2 * gamma * I * kT * dt);
-      body.applyImpulse({ x: sLin * this.rng.gauss(), y: sLin * this.rng.gauss() }, true);
-      body.applyTorqueImpulse(sAng * this.rng.gauss(), true);
-      body.setLinearDamping(gamma);
-      body.setAngularDamping(gamma);
+    // Damping is a body property, not a per-step force — only write it when
+    // it actually changes.
+    if (gamma !== this._appliedGamma) {
+      for (const body of this.bodies) {
+        body.setLinearDamping(gamma);
+        body.setAngularDamping(gamma);
+      }
+      this._appliedGamma = gamma;
     }
 
-    // charge forces as impulses at world points
     this._updateSiteWorld();
-    accumulateChargeForces(this.sites, this.params, this._fx, this._fy);
+    accumulateChargeForcesCulled(this.sites, this.params, this._fx, this._fy, this._molIndex);
+
+    // One applyImpulse + one applyTorqueImpulse per body, with the Langevin
+    // kick folded in. applyImpulseAtPoint(J, p) is equivalent to applying J at
+    // the centre of mass plus a torque (p - com) x J, so summing in JS first
+    // is exact and collapses ~8 WASM crossings per body down to 2.
+    const kick = Math.sqrt(2 * gamma * kT * dt);
+    const imp = this._imp;
     let s = 0;
     for (let mi = 0; mi < this.bodies.length; mi++) {
       const body = this.bodies[mi];
+      const c = this._cos[mi];
+      const sn = this._sin[mi];
+      // world centre of mass = translation + R * localCom (pose cached above)
+      const comX = this._px[mi] + this._localComX[mi] * c - this._localComY[mi] * sn;
+      const comY = this._py[mi] + this._localComX[mi] * sn + this._localComY[mi] * c;
+
+      let ix = 0;
+      let iy = 0;
+      let torque = 0;
       const n = this._siteLocal[mi].length;
       for (let k = 0; k < n; k++, s++) {
-        const fx = this._fx[s];
-        const fy = this._fy[s];
-        if (fx === 0 && fy === 0) continue;
-        body.applyImpulseAtPoint(
-          { x: fx * dt, y: fy * dt },
-          { x: this.sites.x[s], y: this.sites.y[s] },
-          true,
-        );
+        const jx = this._fx[s] * dt;
+        const jy = this._fy[s] * dt;
+        if (jx === 0 && jy === 0) continue;
+        ix += jx;
+        iy += jy;
+        torque += (this.sites.x[s] - comX) * jy - (this.sites.y[s] - comY) * jx;
       }
+
+      const sLin = kick * Math.sqrt(this._mass[mi]);
+      const sAng = kick * Math.sqrt(this._inertia[mi]);
+      imp.x = ix + sLin * this.rng.gauss();
+      imp.y = iy + sLin * this.rng.gauss();
+      body.applyImpulse(imp, true);
+      body.applyTorqueImpulse(torque + sAng * this.rng.gauss(), true);
     }
 
     this.world.timestep = dt;
@@ -146,33 +200,37 @@ export class RigidEngine extends BaseEngine {
     this.time += dt;
   }
 
+  // Refresh the cached pose only if it is stale for the current step.
+  _syncPose() {
+    if (this._poseStep !== this.stepCount) this._updateSiteWorld();
+  }
+
   poses() {
-    return this.bodies.map((b) => {
-      const p = b.translation();
-      return { x: p.x, y: p.y, angle: b.rotation() };
-    });
+    this._syncPose();
+    return this.bodies.map((b, mi) => ({
+      x: this._px[mi],
+      y: this._py[mi],
+      angle: Math.atan2(this._sin[mi], this._cos[mi]),
+    }));
   }
 
   outlines() {
+    this._syncPose();
     const out = [];
     for (let mi = 0; mi < this.bodies.length; mi++) {
-      const b = this.bodies[mi];
-      const p = b.translation();
-      const a = b.rotation();
-      const c = Math.cos(a);
-      const sn = Math.sin(a);
+      const px = this._px[mi];
+      const py = this._py[mi];
+      const c = this._cos[mi];
+      const sn = this._sin[mi];
       out.push(
-        this.molecules[mi].spec.verts.map(([x, y]) => [
-          p.x + x * c - y * sn,
-          p.y + x * sn + y * c,
-        ]),
+        this.molecules[mi].spec.verts.map(([x, y]) => [px + x * c - y * sn, py + x * sn + y * c]),
       );
     }
     return out;
   }
 
   chargeWorld() {
-    this._updateSiteWorld();
+    this._syncPose();
     return this.sites;
   }
 
