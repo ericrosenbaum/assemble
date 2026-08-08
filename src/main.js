@@ -43,7 +43,7 @@ async function makeEngine() {
     specs: sc.specs,
     instances: sc.instances,
     box: sc.box,
-    params: sc.params,
+    params: state.engineKind === 'soft' ? { ...sc.params, ...sc.paramsSoft } : sc.params,
     seed: sc.seed,
     schedule: sc.schedule,
   };

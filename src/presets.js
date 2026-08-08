@@ -18,6 +18,7 @@ export function buildScenario(name, overrides = {}) {
     box,
     seed: def.seed,
     params: def.params,
+    paramsSoft: { ...SOFT_TUNED, ...(def.paramsSoft ?? {}) },
     schedule: new TemperatureSchedule(def.schedule),
     nRing: spec._nRing,
     def,
@@ -32,6 +33,10 @@ export function buildScenario(name, overrides = {}) {
 //  - low friction so faces can slide into registration while docking
 const TUNED = { k: 6, lambda: 1.4, soft: 0.5, gamma: 0.3, cutoff: 9, friction: 0.1, restitution: 0.05 };
 const ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 50000, coolSteps: 50000 };
+// The soft engine binds through sticky sites that WCA shells keep ~1 unit
+// apart, so it needs a stronger charge constant and a smaller particle
+// diameter to reach the same binding-energy/kT ratios as the rigid engine.
+const SOFT_TUNED = { k: 25, sigma: 1.2 };
 
 export const SCENARIOS = {
   'wedge-8': {
