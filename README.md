@@ -215,16 +215,30 @@ it by chaining bonds one at a time — each step only asserting that two faces
 sit flush — and then asking whether molecule *m* lands back on molecule 0. It
 does, to ~1e-15, for every case below.
 
-| preset | shape | k | predicts | built it? |
+Every preset below was run for 130k steps and the detector's ring census
+matched the prediction in each case:
+
+| preset | shape | k | predicts | observed |
 | --- | --- | --- | --- | --- |
-| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | yes |
-| `hex-trimer` | hexagon | 1 | 3-ring | yes |
-| `hex-ring6` | hexagon | 2 | 6-ring | yes |
-| `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | yes |
-| `tri-rosette` | triangle | 1 | 6-ring rosette | yes |
-| `pent-ring10` | pentagon | 2 | 10-ring | yes |
-| `square-sheet` | square | — | lattice (all faces charged) | yes |
-| `hex-sheet` | hexagon | — | honeycomb sheet | yes |
+| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | `[4,4,5,4,5]` |
+| `hex-trimer` | hexagon | 1 | 3-ring | `[3,3,3,3]` |
+| `hex-ring6` | hexagon | 2 | 6-ring | `[6,6,6]` |
+| `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | no rings, chains to 9 |
+| `tri-rosette` | triangle | 1 | 6-ring rosette | `[6,6]` |
+| `pent-ring10` | pentagon | 2 | 10-ring | `[10]` |
+| `square-sheet` | square | — | lattice (all faces charged) | one 36-molecule sheet |
+| `hex-sheet` | hexagon | — | honeycomb sheet | one 30-molecule sheet |
+
+![squares forming 2x2 blocks](results/square-2x2.gif)
+![hexagons forming 6-rings](results/hex-ring6.gif)
+
+*Squares closing into 2×2 pinwheels; hexagons closing into 6-rings.*
+
+![hexagon fibres](results/hex-fiber.gif)
+![triangle rosettes](results/tri-rosette.gif)
+
+*The same hexagon with its charged faces moved to opposite sides builds
+filaments instead; triangles build 6-membered rosettes.*
 
 Two corollaries fall out for free. `k = n/2` puts the faces opposite each
 other, giving `rot = 0` — partners stay aligned and the chain runs straight
