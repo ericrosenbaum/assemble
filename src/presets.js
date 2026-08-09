@@ -31,12 +31,31 @@ export function buildScenario(name, overrides = {}) {
 //    correct joints hold (≈25 kT)
 //  - long hold in that selective window, then cool to lock structures
 //  - low friction so faces can slide into registration while docking
-const TUNED = { k: 6, lambda: 1.4, soft: 0.5, gamma: 0.3, cutoff: 9, friction: 0.1, restitution: 0.05 };
-const ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 50000, coolSteps: 50000 };
+// dt = 1/60 rather than 1/120: a sweep over dt (tools/sweep.mjs, 3 seeds,
+// schedules rescaled so simulated time is held constant) showed 1/60 reaching
+// assembly in about half the wall-clock with ring yield no worse — and a
+// dense/hot stress test (90 molecules in a 64-unit box) found the same minimum
+// centre separation and peak speeds as 1/120, so contacts are not being
+// tunnelled through. Schedule step counts below are halved to match, keeping
+// the annealing profile identical in simulated time.
+const TUNED = {
+  dt: 1 / 60,
+  k: 6,
+  lambda: 1.4,
+  soft: 0.5,
+  gamma: 0.3,
+  cutoff: 9,
+  friction: 0.1,
+  restitution: 0.05,
+};
+const ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 25000, coolSteps: 25000 };
 // The soft engine binds through sticky sites that WCA shells keep ~1 unit
 // apart, so it needs a stronger charge constant and a smaller particle
 // diameter to reach the same binding-energy/kT ratios as the rigid engine.
-const SOFT_TUNED = { k: 25, sigma: 1.2 };
+// It keeps dt = 1/120: its substep is dt/substeps against very stiff springs
+// (kSpring 2500), so doubling dt would double the substep and eat the
+// integrator's stability margin, which the dt sweep above did not test.
+const SOFT_TUNED = { k: 25, sigma: 1.2, dt: 1 / 120 };
 
 export const SCENARIOS = {
   'wedge-8': {
