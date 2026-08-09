@@ -220,9 +220,9 @@ matched the prediction in each case:
 
 | preset | shape | k | predicts | observed |
 | --- | --- | --- | --- | --- |
-| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | `[4,4,5,4,5]` |
+| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | `[4,4,4,4,4,4]` |
 | `hex-trimer` | hexagon | 1 | 3-ring | `[3,3,3,3]` |
-| `hex-ring6` | hexagon | 2 | 6-ring | `[6,6,6]` |
+| `hex-ring6` | hexagon | 2 | 6-ring | `[6,6]` |
 | `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | no rings, chains to 9 |
 | `tri-rosette` | triangle | 1 | 6-ring rosette | `[6,6]` |
 | `pent-ring10` | pentagon | 2 | 10-ring | `[10]` |
@@ -317,18 +317,18 @@ finite **star**. Two things make it easy:
 
 | preset | hub | arm | observed |
 | --- | --- | --- | --- |
-| `star-3` | triangle | rod, `−` one end | `[3,3,3,2,2,2]` |
+| `star-3` | triangle | rod, `−` one end | `[3,3,3,2]` |
 | `star-4` | square | rod | `[4,3,3,2,2,2]` |
 | `star-6` | hexagon | rod | `[6,6,4,3,2,2]` |
-| `strut-net` | triangle | strut, `−` **both** ends | branched network, largest 11 |
+| `strut-net` | triangle | strut, `−` **both** ends | branched network, largest 14 |
 
 ![3-armed stars](results/star-3.gif)
 ![6-armed asterisks](results/star-6.gif)
 
 *Triangles gathering three arms each; hexagons gathering six.*
 
-Those censuses are arm counts per star, so `[3,3,3,2,2,2]` is three complete
-3-armed stars and three still one arm short. Ring detection can't see stars at
+Those censuses are arm counts per star, so `[3,3,3,2]` is three complete
+3-armed stars and one still an arm short. Ring detection can't see stars at
 all (it wants every member at degree 2), so `countStars` in
 `src/sim/analysis.js` reports them instead, and the HUD shows whichever of the
 two a scenario actually builds.
@@ -372,7 +372,7 @@ including ones drawn in the designer.
 | preset | contents | observed |
 | --- | --- | --- |
 | `dock-lock-key` | receptor + matching key | 10/12 receptors docked, every cluster a pair |
-| `dock-selectivity` | receptor + matching key + wider decoy | matching **5/14**, decoy **0/14** |
+| `dock-selectivity` | receptor + matching key + wider decoy | matching **8/14**, decoy **0/14** |
 | `dock-chain` | monomer with a notch one side, tip the other | dimers and short chains |
 
 The `dock-chain` monomer cuts its notch 0.3 units deeper and wider than the tip
@@ -462,11 +462,36 @@ watched it. `test/stability.test.mjs` now runs **every** scenario and fails if
 any exceeds 4× equilibrium, so a new preset with stronger charges gets caught
 by `npm test` instead of in a movie. All 23 pass, the worst at 1.5×.
 
-The fixes helped the presets that were *not* visibly bursting too, since they
-were all sitting on the same cusp. Holding the run protocol fixed and changing
-only the code, `wedge-8` goes from no closed ring to one, `square-2x2` from
-three closed 2×2s to six, and `strut-net`'s largest network from 7 molecules to
-12.
+What the fix is *worth* took some care to measure, because a single seed said
+whatever you wanted it to. Comparing the same preset before and after over five
+seeds at the full anneal length:
+
+| preset | before | after |
+| --- | --- | --- |
+| `dock-chain` | 6.2 mean bonded | **12.8** — every seed improved |
+| `hex-ring6` | 3 rings / 5 seeds, 29.4 bonded | 3 rings / 5 seeds, 29.4 bonded |
+| `strut-net` | 33.6 mean bonded | 33.4 mean bonded |
+| `dock-selectivity` | 16.0 mean bonded, decoy 0/14 on all seeds | 14.4, decoy 0/14 on 4 of 5 |
+
+So the gain is concentrated exactly where the bursting was: `dock-chain` roughly
+doubles its yield, since joints that stop being blown apart stay bonded. The
+ring and network presets are statistically unchanged — they were sitting on the
+same cusp but were never energetic enough to be thrown off it. And
+`dock-selectivity` is slightly *worse*: a little less bound overall, and on one
+seed in five a single decoy now sticks where none did before. The smoother
+kernel is marginally less sharp at discriminating depth, which is the honest
+cost of the trade.
+
+Six presets were re-shot rather than assumed — the two docking runs, the two
+star runs, and the two ring runs whose GIFs appear above. Four numbers moved:
+`dock-selectivity` 5/14 → 8/14 matching, `strut-net`'s largest network 11 → 14,
+`star-3`'s census `[3,3,3,2,2,2]` → `[3,3,3,2]`, and `square-2x2` from
+`[4,4,5,4,5]` to `[4,4,4,4,4,4]`. That last one is the most interesting: a
+2×2 block is a 4-cycle, so the 5-cycles in the old run were misregistered rings
+held together by strained bonds. They no longer form. `hex-ring6` reads `[6,6]`
+where it used to read `[6,6,6]`, but that is the single capture seed moving —
+across five seeds the ring yield is identical, which is exactly why the table
+above exists.
 
 One caution worth recording: a three-seed comparison of solver settings looked
 conclusive and was not — `numSolverIterations = 8` "fixed" the bursting seed
