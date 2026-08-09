@@ -187,10 +187,10 @@ for (const { label, box, count } of [
         refFy[j] -= fOverR * dy;
       }
       if (L.q[i] !== 0 && L.q[j] !== 0 && r2raw <= cut2) {
-        const r = Math.sqrt(r2raw);
+        // softened distance in the exponential too, matching pairForce()
         const rs = Math.sqrt(r2raw + soft2);
-        const kq = p.k * L.q[i] * L.q[j] * Math.exp(-r / p.lambda);
-        const f = -(kq * (-1 / (p.lambda * rs) - r / (rs * rs * rs))) / (r + 1e-12);
+        const dUdrs = ((p.k * L.q[i] * L.q[j] * Math.exp(-rs / p.lambda)) / rs) * (-1 / p.lambda - 1 / rs);
+        const f = -dUdrs / rs;
         refFx[i] += f * dx;
         refFy[i] += f * dy;
         refFx[j] -= f * dx;

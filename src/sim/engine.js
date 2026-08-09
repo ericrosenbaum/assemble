@@ -20,7 +20,7 @@ export const defaultParams = {
   // electrostatics
   k: 60, // Coulomb strength
   lambda: 2.0, // screening length
-  soft: 0.6, // softening radius
+  soft: 0.45, // softening radius (also sets the force's spring length at contact)
   cutoff: 10, // interaction cutoff
   // contact
   restitution: 0.15,

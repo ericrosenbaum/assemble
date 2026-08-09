@@ -525,6 +525,18 @@ export function dockingMonomer({
   height = 7,
   apexAngle = Math.PI / 3,
   depth = 3.4,
+  // The notch is cut this much deeper (and correspondingly wider) than the
+  // tip, so a seated tip has room instead of meeting the pocket on three
+  // surfaces at once.
+  //
+  // A mathematically exact fit is degenerate for a contact solver: with zero
+  // clearance the tip's two flanks and its apex all bottom out simultaneously
+  // and the contacts fight, pumping energy in until docked chains burst. It
+  // was worth 8x the thermal equilibrium; at 0.3 clearance it is 1.2x. Chains
+  // also grow *better* (bonded 15/24 against 4/24), because the jam was
+  // blocking proper seating as well as injecting energy. Real locks and keys
+  // have clearance too.
+  clearance = 0.3,
   q = 1,
   chargeT = DEEP_T,
   name = null,
@@ -533,6 +545,8 @@ export function dockingMonomer({
   const hw = width / 2;
   const hh = height / 2;
   const nh = notchHalfWidth(apexAngle, depth);
+  const notchDepth = depth + clearance;
+  const nhNotch = notchHalfWidth(apexAngle, notchDepth);
   // notch cut into the top edge; key tip protruding from the bottom edge
   const verts = [
     [-hw, -hh], // 0
@@ -541,9 +555,9 @@ export function dockingMonomer({
     [nh, -hh], // 3  edge 3 continues along the bottom
     [hw, -hh], // 4
     [hw, hh], // 5
-    [nh, hh], // 6  right lip -> edge 6 descends into the notch
-    [0, hh - depth], // 7  notch apex
-    [-nh, hh], // 8  left lip
+    [nhNotch, hh], // 6  right lip -> edge 6 descends into the notch
+    [0, hh - notchDepth], // 7  notch apex (cut deeper than the tip)
+    [-nhNotch, hh], // 8  left lip
     [-hw, hh], // 9
   ];
   const charges = [];

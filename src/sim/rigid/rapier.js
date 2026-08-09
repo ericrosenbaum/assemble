@@ -39,6 +39,19 @@ export class RigidEngine extends BaseEngine {
     this.world = new RAPIER.World({ x: 0, y: 0 });
     this.world.timestep = this.params.dt;
 
+    // Rapier expresses its contact tolerances as fractions of `lengthUnit`,
+    // which defaults to 1. Our molecules are ~10 units across, so the default
+    // predicts contacts only 0.002 units ahead — while a molecule at thermal
+    // speed covers ~0.008 units per step. Contacts were therefore discovered
+    // *after* interpenetrating, and the solver turned that depth into
+    // velocity: a docked monomer sitting quietly at |v| = 0.47 was launched to
+    // 4.12 in a single step, with the electrostatic force on it only 0.06.
+    // That was the sudden burst. Scaling the unit to the actual molecule size
+    // removed it (10 seeds of dock-chain: peak KE 6.6x equilibrium -> 1.6x,
+    // with the non-bursting seeds unchanged).
+    this.world.integrationParameters.lengthUnit =
+      (2 * this.specs.reduce((a, s) => a + s.boundingRadius(), 0)) / this.specs.length;
+
     // box walls: four fixed cuboids just outside the visible area
     const wall = (x, y, hx, hy) => {
       const b = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y));

@@ -375,6 +375,10 @@ including ones drawn in the designer.
 | `dock-selectivity` | receptor + matching key + wider decoy | matching **5/14**, decoy **0/14** |
 | `dock-chain` | monomer with a notch one side, tip the other | dimers and short chains |
 
+The `dock-chain` monomer cuts its notch 0.3 units deeper and wider than the tip
+that fills it. That clearance is not cosmetic — see *Why docked chains used to
+burst apart* below.
+
 ![docking](results/dock-lock-key.gif)
 ![selectivity](results/dock-selectivity.gif)
 
@@ -401,6 +405,74 @@ and decoy both bound 43%. Scaling the charge down (`k = 1.2`) puts the pair at
 about 21 and 6 energy units, so holding near `kT ≈ 2.2` leaves the matching
 key at ~10 kT and the decoy at ~3 kT. That is the run in the table.
 
+### Why docked chains used to burst apart
+
+Docked assemblies would sit still for thousands of steps and then fly apart in
+an instant. Watching told you nothing — the burst took one frame — and every
+test passed, so the first move was to make the failure into a number. Kinetic
+energy against the Langevin equilibrium (`1.5·N·kT`) does it: a thermostatted
+2D rigid body has three degrees of freedom and nowhere to put extra energy, so
+anything above ~1× is energy the integrator invented.
+
+That immediately said the presets were not equally healthy: most sat near 1×
+while `dock-chain` peaked at **12.9×**. Varying one thing at a time found
+three separate causes, and it took all three.
+
+**A cusp in the interaction.** The screened-Coulomb potential softened its
+*magnitude* — `e^(−r/λ)/√(r²+soft²)` — but left the raw `r` in the exponential,
+so `dU/dr` did not vanish at `r = 0`: the force was −8.57 approaching
+coincidence and +8.57 just past it, a jump of 17 across nothing. Flush mating
+*deliberately* parks opposite charges on top of each other, so every bond in
+every preset was balanced on that spike. Using the softened distance in the
+exponential too makes the force spring-like at contact and exactly zero at
+`r = 0`. Re-tuning `soft` from 0.5 to 0.38 keeps the physics: contact well
+−12.04 against −12.00, long range −0.0847 against −0.0855.
+
+**Zero-clearance geometry.** `dock-chain`'s tip filled its notch exactly, so
+three surfaces bottomed out at once and the contact solver had no consistent
+way to separate them. Cutting the notch 0.3 units deeper and wider than the
+tip took the preset from 8.0× to 1.2× — and *raised* bonding rather than
+lowering it, because a joint that can seat without fighting itself stays
+seated. `strut-net` had the same disease from the other side: struts as wide
+as the hub edge jammed at hub vertices. With charges switched off entirely its
+energy was unchanged (569, 6.4× either way), which proved the jam was pure
+geometry before anything was adjusted.
+
+**Contact tolerances at the wrong scale.** After both fixes one seed still
+spiked. The trace was unambiguous: a docked monomer sat at |v| = 0.47 for
+thousands of steps and reached 4.12 in a *single* step, while the total
+electrostatic force on it was 0.06. Our forces could not have done that. Rapier
+expresses its contact tolerances as fractions of `lengthUnit`, which defaults
+to 1 — but these molecules are ~10 units across and cover ~0.008 units per step
+at thermal speed, against a 0.002-unit prediction distance. Contacts were being
+discovered only *after* interpenetrating, and the solver converted that depth
+into velocity. Setting `lengthUnit` to the actual mean molecule diameter fixed
+it: over ten seeds of `dock-chain`, peak energy went from 6.6× to 1.6× with the
+non-bursting seeds unmoved (1.6/1.5/1.4/1.3 either way).
+
+![docked chains before the fix](results/dock-chain-burst-before.gif)
+![docked chains after the fix](results/dock-chain.gif)
+
+*Same seed, same 40,000 steps. Before: pairs form, burst, re-form, ending with
+4 monomers bonded and nothing longer than a dimer. After: 9 bonded and a
+3-chain that holds.*
+
+The real bug, though, was that an unstable preset looked fine until a human
+watched it. `test/stability.test.mjs` now runs **every** scenario and fails if
+any exceeds 4× equilibrium, so a new preset with stronger charges gets caught
+by `npm test` instead of in a movie. All 23 pass, the worst at 1.5×.
+
+The fixes helped the presets that were *not* visibly bursting too, since they
+were all sitting on the same cusp. Holding the run protocol fixed and changing
+only the code, `wedge-8` goes from no closed ring to one, `square-2x2` from
+three closed 2×2s to six, and `strut-net`'s largest network from 7 molecules to
+12.
+
+One caution worth recording: a three-seed comparison of solver settings looked
+conclusive and was not — `numSolverIterations = 8` "fixed" the bursting seed
+and created a fresh 8.7× burst on a different one. Rare stochastic failures
+need enough seeds to tell a fix from a reshuffle.
+
 ## Headless capture & experiments
 
 The same build runs headless for parameter sweeps and movie-making:
@@ -423,7 +495,8 @@ a bond-graph cycle check (`src/sim/analysis.js`), also shown live in the UI.
 ## Tests
 
 ```bash
-npm test                     # geometry + force-kernel correctness (node, no browser)
+npm test                     # geometry, force kernels, and thermal stability of every preset
+npm run test:fast            # the same minus the stability sweep (seconds rather than minutes)
 node test/parity.test.mjs    # CPU vs WebGL2 physics parity (headless Chromium)
 npm run bench                # engine throughput at several molecule counts
 node tools/sweep.mjs         # parameter sweep scored on time-to-assembly

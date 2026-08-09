@@ -298,10 +298,10 @@ export class SoftEngineCPU extends BaseEngine {
             const dy = yi - L.y[j];
             const r2 = dx * dx + dy * dy;
             if (r2 > cut2) continue;
-            const r = Math.sqrt(r2);
+            // must match pairForce() exactly — softened distance in exp() too
             const rs = Math.sqrt(r2 + soft2);
-            const kq = kC * qi * L.q[j] * Math.exp(-r * invLambda);
-            const f = -(kq * (-invLambda / rs - r / (rs * rs * rs))) / (r + 1e-12);
+            const dUdrs = ((kC * qi * L.q[j] * Math.exp(-rs * invLambda)) / rs) * (-invLambda - 1 / rs);
+            const f = -dUdrs / rs;
             const ax = f * dx;
             const ay = f * dy;
             fxi += ax;

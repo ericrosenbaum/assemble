@@ -86,7 +86,11 @@ const TUNED = {
   dt: 1 / 60,
   k: 6,
   lambda: 1.4,
-  soft: 0.5,
+  // 0.38 rather than 0.5: the kernel now uses the softened distance inside the
+  // exponential as well (see electrostatics.js), which would otherwise shallow
+  // the contact well by ~30%. At 0.38 the well depth is -12.04 against the old
+  // -12.00 and the long range moves <1%, so every preset's tuning carries over.
+  soft: 0.38,
   gamma: 0.3,
   cutoff: 9,
   friction: 0.1,
@@ -377,7 +381,18 @@ export const SCENARIOS = {
     config: {
       species: [
         { spec: () => hub({ n: 3, name: 'triangle hub', color: '#5fb0a5' }), count: 14 },
-        { spec: () => rod({ bothEnds: true, length: 12, name: 'strut', color: '#e8b04b' }), count: 21 },
+        // 4.6 wide rather than the hub's 5, for clearance. At equal width the
+        // struts meet exactly at the hub's vertices, and a strut bonded at
+        // both ends is pinned in the network and cannot relieve that
+        // degenerate vertex contact — measured at 6.4x thermal equilibrium
+        // with the charges switched *off*, so it was pure geometry. The small
+        // gap takes it to 1.6x. The star presets keep the full width: their
+        // arms bind at one end only and can always back off.
+        {
+          spec: () =>
+            rod({ bothEnds: true, length: 12, width: 4.6, name: 'strut', color: '#e8b04b' }),
+          count: 21,
+        },
       ],
       packing: 0.22,
       seed: 24,

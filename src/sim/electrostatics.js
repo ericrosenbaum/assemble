@@ -1,28 +1,35 @@
 // Screened-Coulomb (Yukawa) interaction between charge sites.
 //
-// U(r) = k q1 q2 exp(-r/lambda) / sqrt(r^2 + soft^2)
-// F(r) = -dU/dr, pointing along the pair separation.
+//   rs   = sqrt(r^2 + soft^2)          softened distance
+//   U    = k q1 q2 exp(-rs/lambda) / rs
+//   F    = -dU/dr = -(dU/drs) * (r/rs)
 //
 // The screening length lambda keeps binding short-ranged and specific —
 // that's what makes assembled structures stable instead of one big clump.
-// `soft` regularizes the singularity when mating sites coincide.
-
+//
+// `soft` must appear in the exponential too, not just the denominator. An
+// earlier version softened only the magnitude and left the raw r in exp(),
+// which leaves dU/dr non-zero at r = 0: the force was -8.6 approaching
+// coincidence and flipped to +8.6 on the other side, a jump of 17 across an
+// infinitesimal distance. Flush mating deliberately parks opposite charges on
+// top of each other, so every bonded pair sat exactly on that cusp and any
+// jiggle through r = 0 delivered an impulsive kick. Docked chains — six such
+// pairs per joint at the strongest interface in the app — burst apart.
+//
+// Written this way dU/dr carries a factor r/rs and vanishes linearly at
+// contact, so the force is spring-like there: bounded stiffness, which is what
+// an explicit integrator needs. See test/stability.test.mjs.
 export function pairForce(dx, dy, q1q2, { k, lambda, soft }) {
-  const r2 = dx * dx + dy * dy;
-  const r = Math.sqrt(r2);
-  const rs = Math.sqrt(r2 + soft * soft);
-  const e = Math.exp(-r / lambda);
-  // U = k q1q2 e / rs ; dU/dr = k q1q2 e (-1/(lambda rs) - r/rs^3)
-  const dUdr = k * q1q2 * e * (-1 / (lambda * rs) - r / (rs * rs * rs));
-  // force on site 1 = -dU/dr * rhat
-  const f = -dUdr / (r + 1e-12);
+  const rs = Math.sqrt(dx * dx + dy * dy + soft * soft);
+  const dUdrs = ((k * q1q2 * Math.exp(-rs / lambda)) / rs) * (-1 / lambda - 1 / rs);
+  // f = -(dU/drs)(drs/dr)/r = -(dU/drs)/rs, since drs/dr = r/rs
+  const f = -dUdrs / rs;
   return [f * dx, f * dy];
 }
 
 export function pairEnergy(dx, dy, q1q2, { k, lambda, soft }) {
-  const r2 = dx * dx + dy * dy;
-  const r = Math.sqrt(r2);
-  return (k * q1q2 * Math.exp(-r / lambda)) / Math.sqrt(r2 + soft * soft);
+  const rs = Math.sqrt(dx * dx + dy * dy + soft * soft);
+  return (k * q1q2 * Math.exp(-rs / lambda)) / rs;
 }
 
 // Reference all-pairs accumulator: every inter-molecular charge-site pair.
@@ -146,11 +153,10 @@ export function accumulateChargeForcesCulled(sites, params, outFx, outFy, molInd
           const dy = yi - y[j];
           const r2 = dx * dx + dy * dy;
           if (r2 > c2) continue;
-          const r = Math.sqrt(r2);
+          // must match pairForce() exactly — softened distance in exp() too
           const rs = Math.sqrt(r2 + soft2);
-          const kq = k * qi * q[j] * Math.exp(-r * invLambda);
-          const dUdr = kq * (-invLambda / rs - r / (rs * rs * rs));
-          const f = -dUdr / (r + 1e-12);
+          const dUdrs = ((k * qi * q[j] * Math.exp(-rs * invLambda)) / rs) * (-invLambda - 1 / rs);
+          const f = -dUdrs / rs;
           const fx = f * dx;
           const fy = f * dy;
           fxi += fx;

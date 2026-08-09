@@ -115,12 +115,12 @@ void main() {
       float inv6 = inv2 * inv2 * inv2;
       F += (24. * epsWCA * inv6 * (2. * inv6 - 1.) / r2c) * d;
     }
+    // must match pairForce() exactly — softened distance in exp() too, so the
+    // force vanishes at coincidence instead of flipping sign discontinuously
     if (qq != 0. && r2 < cut2) {
-      float r = sqrt(r2);
       float rs = sqrt(r2 + softR * softR);
-      float e = exp(-r / lambda);
-      float dUdr = kCoulomb * qq * e * (-1. / (lambda * rs) - r / (rs * rs * rs));
-      F += (-dUdr / (r + 1e-12)) * d;
+      float dUdrs = (kCoulomb * qq * exp(-rs / lambda) / rs) * (-1. / lambda - 1. / rs);
+      F += (-dUdrs / rs) * d;
     }
   }
 

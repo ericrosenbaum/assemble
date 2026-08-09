@@ -110,12 +110,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       let inv6 = inv2 * inv2 * inv2;
       F += (24.0 * P.epsWCA * inv6 * (2.0 * inv6 - 1.0) / r2c) * d;
     }
+    // must match pairForce() exactly — softened distance in exp() too, so the
+    // force vanishes at coincidence instead of flipping sign discontinuously
     if (qq != 0.0 && r2 < cut2) {
-      let r = sqrt(r2);
       let rs = sqrt(r2 + P.softR * P.softR);
-      let e = exp(-r / P.lambda);
-      let dUdr = P.kCoulomb * qq * e * (-1.0 / (P.lambda * rs) - r / (rs * rs * rs));
-      F += (-dUdr / (r + 1e-12)) * d;
+      let dUdrs = (P.kCoulomb * qq * exp(-rs / P.lambda) / rs) * (-1.0 / P.lambda - 1.0 / rs);
+      F += (-dUdrs / rs) * d;
     }
   }
 
