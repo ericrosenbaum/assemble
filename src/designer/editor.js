@@ -1,12 +1,24 @@
 // Molecule designer: edit a polygon, paint +/- charges on its edges, then
 // drop copies into the simulation. Touch-friendly (pointer events).
 
-import { MoleculeSpec, wedge } from '../shapes.js';
+import { MoleculeSpec, wedge, facePair, tiler } from '../shapes.js';
 
+// Each starter is a working design, so editing one is a starting point rather
+// than a blank page. The polygon entries are labelled with what they build:
+// for a regular n-gon with its + and − faces k edges apart, the ring size is
+// m = 2n/(n-2k) (see src/shapes.js).
 const STARTERS = {
-  'wedge (8-ring)': () => wedge({ nRing: 8 }),
-  'wedge (6-ring)': () => wedge({ nRing: 6 }),
-  square: () =>
+  'wedge → 8-ring': () => wedge({ nRing: 8 }),
+  'wedge → 6-ring': () => wedge({ nRing: 6 }),
+  'square → 2×2 block': () => facePair({ n: 4, k: 1 }),
+  'square → sheet': () => tiler({ n: 4 }),
+  'hexagon → trimer': () => facePair({ n: 6, k: 1 }),
+  'hexagon → 6-ring': () => facePair({ n: 6, k: 2 }),
+  'hexagon → fibre': () => facePair({ n: 6, k: 3 }),
+  'hexagon → honeycomb': () => tiler({ n: 6 }),
+  'triangle → 6-rosette': () => facePair({ n: 3, k: 1 }),
+  'pentagon → 10-ring': () => facePair({ n: 5, k: 2 }),
+  'blank square': () =>
     new MoleculeSpec({
       name: 'square',
       verts: [
@@ -15,25 +27,7 @@ const STARTERS = {
         [4, 4],
         [-4, 4],
       ],
-      charges: [
-        { edge: 1, t: 0.3, q: 1 },
-        { edge: 1, t: 0.7, q: 1 },
-        { edge: 3, t: 0.3, q: -1 },
-        { edge: 3, t: 0.7, q: -1 },
-      ],
-    }),
-  triangle: () =>
-    new MoleculeSpec({
-      name: 'triangle',
-      verts: [
-        [-5, -3],
-        [5, -3],
-        [0, 5.66],
-      ],
-      charges: [
-        { edge: 0, t: 0.5, q: 1 },
-        { edge: 1, t: 0.5, q: -1 },
-      ],
+      charges: [],
     }),
 };
 
@@ -75,7 +69,7 @@ export function mountDesigner(host, { onUse }) {
   const canvas = host.querySelector('.dz-canvas');
   const ctx = canvas.getContext('2d');
   const jsonBox = host.querySelector('.dz-json');
-  let spec = STARTERS['wedge (8-ring)']();
+  let spec = STARTERS['wedge → 8-ring']();
   let verts = spec.verts.map((v) => [...v]);
   let charges = spec.charges.map((c) => ({ ...c }));
   let mode = 'move';

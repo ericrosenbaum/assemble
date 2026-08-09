@@ -1,14 +1,24 @@
 // Scenario presets: a molecule set + box + placement + physics params +
 // temperature schedule, everything needed for a reproducible run.
 
-import { wedge, MoleculeSpec } from './shapes.js';
+import { wedge, facePair, tiler, MoleculeSpec } from './shapes.js';
 import { TemperatureSchedule, scatterInstances } from './sim/engine.js';
 import { makeRng } from './rng.js';
+
+// Box side that puts `count` copies of `spec` at a given area packing
+// fraction. Density matters as much as the charge parameters — too sparse and
+// molecules rarely meet, too dense and everything jams before it can anneal —
+// so shapes of different sizes are sized to a common fraction rather than a
+// hand-picked box each.
+export function boxForPacking(spec, count, packing = 0.17) {
+  return Math.round(Math.sqrt((count * Math.abs(spec.area())) / packing));
+}
 
 export function buildScenario(name, overrides = {}) {
   const def = { ...(SCENARIOS[name] ?? SCENARIOS['wedge-8']).config, ...overrides };
   const spec = def.spec();
-  const box = { w: def.boxW, h: def.boxH };
+  const side = def.packing ? boxForPacking(spec, def.count, def.packing) : null;
+  const box = { w: def.boxW ?? side, h: def.boxH ?? side };
   const rng = makeRng(def.seed);
   const instances = scatterInstances({ count: def.count, box, spec, rng });
   return {
@@ -49,6 +59,11 @@ const TUNED = {
   restitution: 0.05,
 };
 const ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 25000, coolSteps: 25000 };
+// Bigger target rings need a longer search: every molecule carries just two
+// binding faces, so a 6- or 10-ring only closes after that many correct
+// encounters in a row, and the hold is where wrong bonds get a chance to
+// break. Small targets (2x2 blocks, trimers) close fine on the short anneal.
+const LONG_ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 70000, coolSteps: 35000 };
 // The soft engine binds through sticky sites that WCA shells keep ~1 unit
 // apart, so it needs a stronger charge constant and a smaller particle
 // diameter to reach the same binding-energy/kT ratios as the rigid engine.
@@ -104,6 +119,101 @@ export const SCENARIOS = {
       seed: 3,
       params: { ...TUNED },
       schedule: { ...ANNEAL, Tstart: 1.6 },
+    },
+  },
+
+  // --- regular-polygon family -------------------------------------------
+  // Each of these is a regular n-gon with a + face and a − face k edges
+  // apart. That single choice fixes what it can build: m = 2n/(n-2k), the
+  // rule verified in test/geometry.test.mjs. Same charge parameters
+  // throughout — the structures differ because of geometry, not tuning.
+
+  'square-2x2': {
+    label: 'squares → 2×2 blocks',
+    config: {
+      spec: () => facePair({ n: 4, k: 1, name: 'square-2x2', color: '#7fb069' }),
+      count: 32,
+      packing: 0.17,
+      seed: 5,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'square-sheet': {
+    label: 'squares → lattice sheet',
+    config: {
+      spec: () => tiler({ n: 4, name: 'square-sheet', color: '#5fb0a5' }),
+      count: 36,
+      packing: 0.40,
+      seed: 8,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'hex-trimer': {
+    label: 'hexagons → trimers (k=1)',
+    config: {
+      spec: () => facePair({ n: 6, k: 1, name: 'hex-trimer', color: '#6c91bf' }),
+      count: 30,
+      packing: 0.22,
+      seed: 4,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'hex-ring6': {
+    label: 'hexagons → 6-rings (k=2)',
+    config: {
+      spec: () => facePair({ n: 6, k: 2, name: 'hex-ring6', color: '#8a7fb0' }),
+      count: 30,
+      packing: 0.25,
+      seed: 6,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  'hex-fiber': {
+    label: 'hexagons → straight fibres (k=3)',
+    config: {
+      spec: () => facePair({ n: 6, k: 3, name: 'hex-fiber', color: '#c76f8a' }),
+      count: 30,
+      packing: 0.25,
+      seed: 9,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  'hex-sheet': {
+    label: 'hexagons → honeycomb sheet',
+    config: {
+      spec: () => tiler({ n: 6, name: 'hex-sheet', color: '#e8b04b' }),
+      count: 30,
+      packing: 0.4,
+      seed: 2,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  'tri-rosette': {
+    label: 'triangles → 6-rosettes',
+    config: {
+      spec: () => facePair({ n: 3, k: 1, name: 'tri-rosette', color: '#d98b4a' }),
+      count: 36,
+      packing: 0.15,
+      seed: 7,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'pent-ring10': {
+    label: 'pentagons → 10-rings',
+    config: {
+      spec: () => facePair({ n: 5, k: 2, name: 'pent-ring10', color: '#5aa9a0' }),
+      count: 30,
+      packing: 0.25,
+      seed: 3,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
     },
   },
 };

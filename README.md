@@ -197,6 +197,51 @@ What ended up mattering, in order:
 
 The tuned constants live in `src/presets.js`.
 
+## A whole family from one rule
+
+The wedge was hand-designed to close a ring of a chosen size. Regular polygons
+turn out to need no design at all — one choice determines everything they can
+build.
+
+Give a regular *n*-gon a `+` face and a `−` face *k* edges apart. Mating two
+faces fixes the partners' relative orientation, so **every** bond rotates the
+next molecule by the same angle, `rot = π − 2πk/n`. A ring of *m* closes only
+if `m·rot` is a whole number of turns:
+
+> **m = 2n / (n − 2k)**
+
+That single expression predicts the lot, and `test/geometry.test.mjs` checks
+it by chaining bonds one at a time — each step only asserting that two faces
+sit flush — and then asking whether molecule *m* lands back on molecule 0. It
+does, to ~1e-15, for every case below.
+
+| preset | shape | k | predicts | built it? |
+| --- | --- | --- | --- | --- |
+| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | yes |
+| `hex-trimer` | hexagon | 1 | 3-ring | yes |
+| `hex-ring6` | hexagon | 2 | 6-ring | yes |
+| `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | yes |
+| `tri-rosette` | triangle | 1 | 6-ring rosette | yes |
+| `pent-ring10` | pentagon | 2 | 10-ring | yes |
+| `square-sheet` | square | — | lattice (all faces charged) | yes |
+| `hex-sheet` | hexagon | — | honeycomb sheet | yes |
+
+Two corollaries fall out for free. `k = n/2` puts the faces opposite each
+other, giving `rot = 0` — partners stay aligned and the chain runs straight
+forever, which is why `hex-fiber` makes filaments rather than rings. And when
+`2n/(n−2k)` isn't an integer no ring can close at all: a pentagon with
+adjacent charged faces (`m = 10/3`) is geometrically frustrated and only makes
+open aggregates.
+
+The `*-sheet` presets charge every face instead of two. Opposite faces must
+carry opposite signs, since edge *i* meets edge *i+n/2* in an aligned tiling —
+so the first half of the edges get `+` and the rest `−`.
+
+All of these run the **same** charge parameters as the wedge. The structures
+differ because of geometry, not tuning; what does change per preset is density
+and how long the anneal holds, since a 10-ring needs ten correct encounters in
+a row and sheets need crowding before they can tile at all.
+
 ## Designing your own molecules
 
 The **molecule designer** panel in the UI lets you drag polygon corners, add

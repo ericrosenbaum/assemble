@@ -1,7 +1,16 @@
 // Assembly analysis: build a bond graph from opposite-sign charge pairs in
 // contact, then report cluster sizes and closed rings.
 
-export function bondGraph(sites, { rBond = 1.6 } = {}) {
+// A bond is a mated +/− charge pair. The threshold is not arbitrary: measured
+// across scenarios, mated pairs sit at d < 0.4 and nothing else appears until
+// ~1.2, so 0.8 lands in an empty gap and is insensitive to its exact value.
+//
+// The earlier 1.6 sat past that gap and roughly doubled the bond count by
+// picking up molecules that merely touch. That matters most for compact
+// structures: in a 2x2 square block the four molecules meet at a point, so
+// the diagonal pair's charges come within 1.6 without being bonded, which
+// added spurious graph edges and made genuine 4-cycles unrecognisable.
+export function bondGraph(sites, { rBond = 0.8 } = {}) {
   const { x, y, q, mol, count } = sites;
   const r2 = rBond * rBond;
   const nMol = sites.nMol ?? Math.max(...mol) + 1;

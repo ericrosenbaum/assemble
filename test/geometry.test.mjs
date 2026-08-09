@@ -1,4 +1,14 @@
-import { wedge, ringPose, polygonArea } from '../src/shapes.js';
+import {
+  wedge,
+  ringPose,
+  polygonArea,
+  facePair,
+  tiler,
+  facePairChain,
+  mateNextPose,
+  transformVerts,
+  predictedAssembly,
+} from '../src/shapes.js';
 
 function transform(verts, pose) {
   const c = Math.cos(pose.angle);
@@ -75,6 +85,118 @@ for (const nRing of [6, 8, 12]) {
     maxChargeGap < 1e-9,
   );
   check(`wedge${nRing} mating charges are equal and opposite`, signsOk);
+}
+
+// --- regular-polygon family: does m = 2n/(n-2k) actually predict closure? ---
+//
+// Build the chain by mating bonds one at a time (each step only asserts that
+// two faces sit flush) and then ask whether molecule m lands back on molecule
+// 0. Nothing here assumes a ring radius, so agreement is real evidence for
+// the rule rather than a restatement of it.
+console.log('\n-- regular-polygon assembly predictions --');
+for (const [n, k, expect] of [
+  [4, 1, 4], // square, adjacent faces -> 2x2 pinwheel
+  [6, 1, 3], // hexagon -> trimer
+  [6, 2, 6], // hexagon -> 6-ring
+  [3, 1, 6], // triangle -> 6-membered rosette
+  [5, 2, 10], // pentagon -> 10-ring
+  [8, 3, 8], // octagon -> 8-ring
+]) {
+  const pred = predictedAssembly(n, k);
+  check(`n=${n} k=${k}: rule predicts a ${expect}-ring`, pred.kind === 'ring' && pred.size === expect);
+
+  const spec = facePair({ n, k });
+  const m = pred.size;
+  const poses = facePairChain(spec, m);
+
+  // closing bond: mating onto the last molecule must reproduce molecule 0
+  const closing = mateNextPose(spec, poses[m - 1]);
+  const dPos = Math.hypot(closing.x - poses[0].x, closing.y - poses[0].y);
+  const dAng = Math.abs(
+    Math.atan2(Math.sin(closing.angle - poses[0].angle), Math.cos(closing.angle - poses[0].angle)),
+  );
+  check(
+    `n=${n} k=${k}: ${m} copies close the ring (gap ${dPos.toExponential(2)}, ` +
+      `angle ${dAng.toExponential(2)})`,
+    dPos < 1e-9 && dAng < 1e-9,
+  );
+
+  // molecules must not overlap: every pair of centres at least an apothem apart
+  let minSep = Infinity;
+  for (let a = 0; a < m; a++) {
+    for (let b = a + 1; b < m; b++) {
+      minSep = Math.min(minSep, Math.hypot(poses[a].x - poses[b].x, poses[a].y - poses[b].y));
+    }
+  }
+  const apothem = spec.boundingRadius() * Math.cos(Math.PI / n);
+  check(`n=${n} k=${k}: ring has no self-overlap (min sep ${minSep.toFixed(2)})`, minSep > apothem);
+
+  // mating charges must coincide with opposite sign
+  const edges = spec.charges.map((c) => c.edge);
+  const sites = spec.chargeSites();
+  let maxGap = 0;
+  let signsOk = true;
+  for (let a = 0; a < m; a++) {
+    const b = (a + 1) % m;
+    const A = transformVerts(
+      sites.map(([x, y]) => [x, y]),
+      poses[a],
+    );
+    const B = transformVerts(
+      sites.map(([x, y]) => [x, y]),
+      poses[b],
+    );
+    for (let i = 0; i < sites.length; i++) {
+      if (edges[i] !== k % n) continue; // our − face
+      let best = Infinity;
+      let bq = 0;
+      for (let j = 0; j < sites.length; j++) {
+        if (edges[j] !== 0) continue; // partner's + face
+        const d = Math.hypot(A[i][0] - B[j][0], A[i][1] - B[j][1]);
+        if (d < best) {
+          best = d;
+          bq = sites[j][2];
+        }
+      }
+      maxGap = Math.max(maxGap, best);
+      if (Math.abs(sites[i][2] + bq) > 1e-9) signsOk = false;
+    }
+  }
+  check(`n=${n} k=${k}: mating charges coincide (gap ${maxGap.toExponential(2)})`, maxGap < 1e-9);
+  check(`n=${n} k=${k}: mating charges are equal and opposite`, signsOk);
+}
+
+// opposite faces -> straight chain, never closes
+for (const n of [4, 6, 8]) {
+  const pred = predictedAssembly(n, n / 2);
+  check(`n=${n} k=${n / 2}: predicted to run straight, not close`, pred.kind === 'chain');
+  const spec = facePair({ n, k: n / 2 });
+  const poses = facePairChain(spec, 5);
+  // every molecule keeps the same orientation and centres stay collinear
+  const sameAngle = poses.every(
+    (p) => Math.abs(Math.atan2(Math.sin(p.angle), Math.cos(p.angle))) < 1e-9,
+  );
+  const dx = poses[1].x - poses[0].x;
+  const dy = poses[1].y - poses[0].y;
+  const collinear = poses.every((p, i) => Math.hypot(p.x - i * dx, p.y - i * dy) < 1e-9);
+  check(`n=${n}: opposite-face chain stays aligned and straight`, sameAngle && collinear);
+}
+
+// non-integer m -> no closure predicted
+check('n=5 k=1: no ring closes (10/3 is not an integer)', predictedAssembly(5, 1).kind === 'open');
+
+// tilers: opposite faces must carry opposite charge, or the sheet can't bond
+for (const n of [4, 6, 8]) {
+  const spec = tiler({ n });
+  const half = n / 2;
+  let ok = true;
+  for (let e = 0; e < n; e++) {
+    const mine = spec.charges.filter((c) => c.edge === e);
+    const opp = spec.charges.filter((c) => c.edge === (e + half) % n);
+    if (!mine.length || !opp.length) ok = false;
+    else if (Math.sign(mine[0].q) === Math.sign(opp[0].q)) ok = false;
+  }
+  check(`tiler n=${n}: opposite faces carry opposite charge`, ok);
 }
 
 if (failures > 0) {
