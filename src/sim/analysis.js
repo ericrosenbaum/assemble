@@ -92,13 +92,28 @@ export function countStars(graph) {
   return out.sort((a, b) => b - a);
 }
 
+// How many molecules of each species ended up bonded, given a molecule ->
+// species map. Totals alone cannot express "the matching key bound and the
+// decoy did not", which is the entire point of a selectivity experiment.
+export function bondedBySpecies(graph, specOf, nSpecies) {
+  const bound = new Array(nSpecies).fill(0);
+  const total = new Array(nSpecies).fill(0);
+  for (let m = 0; m < specOf.length; m++) {
+    const s = specOf[m];
+    if (s === undefined) continue;
+    total[s]++;
+    if ((graph.adj.get(m)?.size ?? 0) > 0) bound[s]++;
+  }
+  return bound.map((b, i) => ({ species: i, bound: b, total: total[i] }));
+}
+
 export function stats(sites, opts = {}) {
   const graph = bondGraph(sites, opts);
   const comps = clusters(graph);
   const sizes = comps.map((c) => c.length).sort((a, b) => b - a);
   const rings = countRings(graph);
   const stars = countStars(graph);
-  return {
+  const out = {
     clusters: comps.length,
     largest: sizes[0] ?? 0,
     sizes: sizes.slice(0, 8),
@@ -106,4 +121,8 @@ export function stats(sites, opts = {}) {
     stars,
     bonded: sizes.filter((s) => s > 1).reduce((a, b) => a + b, 0),
   };
+  if (opts.specOf) {
+    out.bySpecies = bondedBySpecies(graph, opts.specOf, opts.nSpecies ?? new Set(opts.specOf).size);
+  }
+  return out;
 }

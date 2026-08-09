@@ -9,6 +9,16 @@ import RAPIER from '@dimforge/rapier2d-compat';
 import { BaseEngine } from '../engine.js';
 import { accumulateChargeForcesCulled, buildMoleculeIndex, siteSpread } from '../electrostatics.js';
 import { makeRng } from '../../rng.js';
+import { decomposeConvex, isConvex } from '../../geometry/decompose.js';
+
+// Convex pieces for a spec's collider(s), cached on the spec since several
+// instances share it and decomposition is pure geometry.
+function convexPieces(spec) {
+  if (!spec._convexPieces) {
+    spec._convexPieces = isConvex(spec.verts) ? [spec.verts] : decomposeConvex(spec.verts);
+  }
+  return spec._convexPieces;
+}
 
 let rapierReady = null;
 export function initRapier() {
@@ -70,12 +80,16 @@ export class RigidEngine extends BaseEngine {
           .setLinearDamping(this.params.gamma)
           .setAngularDamping(this.params.gamma),
       );
-      const flat = new Float32Array(spec.verts.flat());
-      const col = RAPIER.ColliderDesc.convexHull(flat)
-        .setRestitution(this.params.restitution)
-        .setFriction(this.params.friction)
-        .setDensity(this.params.density);
-      this.world.createCollider(col, body);
+      // Rapier's 2D colliders are convex, so a molecule with a pocket has to
+      // be attached as several convex pieces or the pocket fills in and
+      // nothing can dock. Convex outlines keep the single-hull path unchanged.
+      for (const piece of convexPieces(spec)) {
+        const col = RAPIER.ColliderDesc.convexHull(new Float32Array(piece.flat()))
+          .setRestitution(this.params.restitution)
+          .setFriction(this.params.friction)
+          .setDensity(this.params.density);
+        this.world.createCollider(col, body);
+      }
       this.bodies.push(body);
       this.molecules.push({ spec, index: mi });
       const local = spec.chargeSites();

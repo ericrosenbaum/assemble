@@ -25,6 +25,8 @@ let statsEvery = 200; // ms
 let lastStats = 0;
 let vertTotal = 0;
 let vertCounts = null;
+// molecule -> species, so multi-species scenarios can report per-species binding
+let statsOpts = {};
 let loopHandle = null;
 
 // steps/s measured over a sliding window
@@ -78,7 +80,7 @@ function post(force = false) {
   let st = null;
   const now = performance.now();
   if (force || now - lastStats > statsEvery) {
-    st = stats(engine.chargeWorld());
+    st = stats(engine.chargeWorld(), statsOpts);
     lastStats = now;
   }
 
@@ -143,6 +145,10 @@ self.onmessage = async (ev) => {
       engine?.free?.();
       engine = engineKind === 'rigid' ? new RigidEngine(opts) : await createSoftEngine(opts, backend);
       await engine.ready;
+      statsOpts =
+        sc.specs.length > 1
+          ? { specOf: sc.instances.map((i) => i.spec), nSpecies: sc.specs.length }
+          : {};
       const { sites } = buildSnapshotLayout();
       rateStart = 0;
       rateSteps = 0;

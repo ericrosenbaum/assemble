@@ -13,7 +13,11 @@ import {
   POLAR_MIRROR_T,
   hub,
   rod,
+  notchedBlock,
+  wedgeKey,
+  dockingMonomer,
 } from '../src/shapes.js';
+import { isConvex } from '../src/geometry/decompose.js';
 
 function transform(verts, pose) {
   const c = Math.cos(pose.angle);
@@ -349,6 +353,73 @@ console.log('\n-- hub-and-arm stars --');
     'double-ended strut has two charged faces',
     new Set(strut.charges.map((c) => c.edge)).size === 2 && strut._valence === 2,
   );
+}
+
+// --- docking into a concave binding site ---
+// The key's tip must fill the notch with its flanks flush, so the charges
+// coincide the same way face-mating does. A decoy with a different apex angle
+// must NOT — that mismatch is the entire selectivity mechanism, and it is
+// shape, not charge, since both keys carry identical charges.
+console.log('\n-- docking --');
+{
+  const R = notchedBlock({});
+  const seat = (key) => {
+    // receptor notch flank is edge 3 (right lip -> apex); the key presents its
+    // edge 0 (apex -> right lip)
+    const pose = mateNextPose({ ...R, _k: 3, verts: R.verts }, { x: 0, y: 0, angle: 0 }, key);
+    const rSites = R.chargeSites();
+    const kSites = key.chargeSites();
+    const placed = transformVerts(
+      kSites.map(([x, y]) => [x, y]),
+      pose,
+    );
+    let maxGap = 0;
+    let signsOk = true;
+    rSites.forEach(([x, y, q]) => {
+      let best = Infinity;
+      let bq = 0;
+      placed.forEach((p, j) => {
+        const d = Math.hypot(x - p[0], y - p[1]);
+        if (d < best) {
+          best = d;
+          bq = kSites[j][2];
+        }
+      });
+      maxGap = Math.max(maxGap, best);
+      if (q * bq >= 0) signsOk = false;
+    });
+    return { maxGap, signsOk };
+  };
+
+  const good = seat(wedgeKey({}));
+  check(`matching key seats flush (max gap ${good.maxGap.toExponential(2)})`, good.maxGap < 1e-9);
+  check('matching key charges are opposite the receptor s', good.signsOk);
+
+  // a decoy with a wider apex still mates one flank (that is how it docks at
+  // all) but cannot bring its far flank onto the notch's other wall
+  const decoy = seat(wedgeKey({ apexAngle: Math.PI / 2 }));
+  check(
+    `decoy key cannot seat — far flank misses by ${decoy.maxGap.toFixed(2)}`,
+    decoy.maxGap > 0.5,
+  );
+  check(
+    'decoy is penalised by shape, not charge (identical charge magnitudes)',
+    JSON.stringify(wedgeKey({}).charges.map((c) => c.q)) ===
+      JSON.stringify(wedgeKey({ apexAngle: Math.PI / 2 }).charges.map((c) => c.q)),
+  );
+
+  // same-species contacts must repel, as with the star family
+  const rSigns = new Set(R.charges.map((c) => Math.sign(c.q)));
+  const kSigns = new Set(wedgeKey({}).charges.map((c) => Math.sign(c.q)));
+  check(
+    `receptor-receptor and key-key repel (receptor ${[...rSigns]}, key ${[...kSigns]})`,
+    rSigns.size === 1 && kSigns.size === 1 && [...rSigns][0] === -[...kSigns][0],
+  );
+
+  // the receptor is genuinely concave — otherwise there is no pocket at all
+  check('receptor outline is concave (has a real pocket)', !isConvex(R.verts));
+  check('key outline is convex (needs no decomposition)', isConvex(wedgeKey({}).verts));
+  check('docking monomer is concave', !isConvex(dockingMonomer({}).verts));
 }
 
 // tilers: opposite faces must carry opposite charge, or the sheet can't bond

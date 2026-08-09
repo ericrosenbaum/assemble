@@ -7,6 +7,9 @@ import {
   tiler,
   hub,
   rod,
+  notchedBlock,
+  wedgeKey,
+  dockingMonomer,
   POLAR_T,
   POLAR_MIRROR_T,
   MoleculeSpec,
@@ -378,6 +381,71 @@ export const SCENARIOS = {
       ],
       packing: 0.22,
       seed: 24,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
+  // --- docking: concave binding sites ------------------------------------
+  // A receptor with a V-notch cut into it, and a key whose tip fills it. The
+  // notch makes the outline concave, so the rigid engine decomposes it into
+  // convex collider pieces — without that the pocket fills in and nothing can
+  // dock. + lines the notch and − sits on the key's flanks, so receptor-
+  // receptor and key-key repel and the only bond is receptor-key.
+
+  'dock-lock-key': {
+    label: 'receptor + key → docked complexes',
+    config: {
+      species: [
+        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 12 },
+        { spec: () => wedgeKey({ name: 'key', color: '#e8b04b' }), count: 16 },
+      ],
+      packing: 0.2,
+      seed: 31,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  // Same chemistry on both keys — identical charges, identical flank lengths —
+  // so any difference in binding is shape complementarity alone. The decoy's
+  // wider apex cannot reach the notch walls, and a pose scan puts its best
+  // interface at −28.8 against the matching key's −77.6.
+  //
+  // A ratio only discriminates at the right absolute scale. With the default
+  // charge these interfaces are ~107 and ~32 energy units, so at the ring
+  // presets' final kT=0.3 both are hundreds of kT and nothing ever lets go —
+  // the first run bound decoys and matching keys equally (43% each). Rather
+  // than heat until the integrator is out of its tested range, the charge is
+  // scaled down here so the same ratio lands in a normal velocity regime:
+  // at k=1.2 the interfaces are ~21 and ~6, and holding near kT≈2.2 leaves
+  // the matching key at ~10 kT (holds) and the decoy at ~3 kT (lets go).
+  // The run ends warm for the same reason — cooling further would just freeze
+  // in whatever happened to be touching.
+  'dock-selectivity': {
+    label: 'right key vs wrong key',
+    config: {
+      species: [
+        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 12 },
+        { spec: () => wedgeKey({ name: 'matching key', color: '#7fb069' }), count: 14 },
+        {
+          spec: () =>
+            wedgeKey({ apexAngle: Math.PI / 2, name: 'decoy key', color: '#c76f8a' }),
+          count: 14,
+        },
+      ],
+      packing: 0.2,
+      seed: 32,
+      params: { ...TUNED, k: 1.2 },
+      schedule: { Tstart: 3.5, Tend: 2.2, holdSteps: 80000, coolSteps: 40000 },
+    },
+  },
+  'dock-chain': {
+    label: 'notch + tip monomer → docked chains',
+    config: {
+      spec: () => dockingMonomer({ name: 'docking monomer', color: '#8a7fb0' }),
+      count: 24,
+      packing: 0.2,
+      seed: 33,
       params: { ...TUNED },
       schedule: { ...LONG_ANNEAL },
     },

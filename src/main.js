@@ -261,6 +261,18 @@ window.__assemble = {
   },
   stats() {
     updateStats();
+    const sc = state.scenario;
+    if (sc && sc.specs.length > 1) {
+      return {
+        ...stats(state.engine.chargeWorld(), {
+          specOf: sc.instances.map((i) => i.spec),
+          nSpecies: sc.specs.length,
+        }),
+        speciesNames: sc.specs.map((s) => s.name),
+        step: state.engine.stepCount,
+        kT: state.engine.params.kT,
+      };
+    }
     return { ...stats(state.engine.chargeWorld()), step: state.engine.stepCount, kT: state.engine.params.kT };
   },
   async parity(opts) {

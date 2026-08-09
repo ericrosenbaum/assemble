@@ -412,6 +412,153 @@ export function rod({
   return spec;
 }
 
+// ---------------------------------------------------------------------------
+// Docking: concave binding sites
+//
+// A receptor with a V-notch cut into it, and a key whose tip fills that notch.
+// Unlike the rounded cradle you might reach for first, a V-notch makes the two
+// pairs of faces mate FLUSH, so the charges coincide exactly the way they do
+// everywhere else and the measured 0.8 bond threshold still applies. It also
+// makes docking orientation-specific — the key has to arrive the right way
+// round, which is the whole point of a lock and key.
+//
+// Specificity is free again: + lines the notch, − sits on the key's flanks, so
+// receptor-receptor and key-key are repulsive and the only bond is
+// receptor-key. Shape does the rest — a key with the wrong apex angle cannot
+// seat however favourable its charges.
+// ---------------------------------------------------------------------------
+
+// Half-width of a notch of the given depth and full apex angle.
+const notchHalfWidth = (apexAngle, depth) => depth * Math.tan(apexAngle / 2);
+
+// Charge positions along a notch flank, measured lip -> apex. Deliberately
+// deep: with charges near the lips, anything that touches the pocket mouth
+// picks up most of the binding, and a pose scan showed a blunt stub actually
+// out-binding the correct key. Burying the site means only a ligand that
+// penetrates to the apex reaches the charges — which is how a real enzyme
+// gets its specificity. Spacings stay unequal, so a slid face still catches
+// at most one pair.
+const DEEP_T = [0.5, 0.68, 0.95];
+
+// Rectangle with a V-notch cut into its top edge. Concave, so the rigid engine
+// decomposes it into convex collider pieces.
+//
+// Vertices run CCW starting bottom-left. Edges 2 and 3 are the notch flanks
+// (right flank descending to the apex, then left flank ascending), which is
+// where the charges go.
+export function notchedBlock({
+  width = 14,
+  height = 8,
+  apexAngle = Math.PI / 3,
+  depth = 4.2,
+  q = 1,
+  sign = +1,
+  chargeT = DEEP_T,
+  name = null,
+  color = null,
+} = {}) {
+  const hw = width / 2;
+  const hh = height / 2;
+  const nh = notchHalfWidth(apexAngle, depth);
+  const verts = [
+    [-hw, -hh], // 0
+    [hw, -hh], // 1  edge 1 = right side
+    [hw, hh], // 2  edge 2 = top-right, then down into the notch
+    [nh, hh], // 3  right lip   -> edge 3 descends to the apex
+    [0, hh - depth], // 4  apex  -> edge 4 ascends to the left lip
+    [-nh, hh], // 5  left lip
+    [-hw, hh], // 6
+  ];
+  const charges = [];
+  for (const t of chargeT) {
+    charges.push({ edge: 3, t, q: q * sign }); // right flank, lip -> apex
+    charges.push({ edge: 4, t: 1 - t, q: q * sign }); // left flank, apex -> lip
+  }
+  const spec = new MoleculeSpec({ name: name ?? 'receptor', verts, charges, color });
+  spec._apexAngle = apexAngle;
+  spec._notchDepth = depth;
+  spec._predicted = { kind: 'receptor', size: 1 };
+  return spec;
+}
+
+// The matching key: a triangular tip that fills the notch, on a rectangular
+// head so it stays visible once seated. Convex, so no decomposition needed.
+//
+// Vertices run CCW from the apex. Edges 0 and 4 are the flanks that mate with
+// the notch, carrying charges at mirrored positions so they land on the
+// receptor's.
+export function wedgeKey({
+  apexAngle = Math.PI / 3,
+  depth = 4.2,
+  headHeight = 3,
+  q = 1,
+  sign = -1,
+  chargeT = DEEP_T,
+  name = null,
+  color = null,
+} = {}) {
+  const nh = notchHalfWidth(apexAngle, depth);
+  const verts = [
+    [0, 0], // 0 apex        -> edge 0 climbs the right flank
+    [nh, depth], // 1 right lip
+    [nh, depth + headHeight], // 2
+    [-nh, depth + headHeight], // 3
+    [-nh, depth], // 4 left lip -> edge 4 descends to the apex
+  ];
+  const charges = [];
+  for (const t of chargeT) {
+    // receptor edge 3 runs lip -> apex, so the key's apex -> lip flank mirrors it
+    charges.push({ edge: 0, t: 1 - t, q: q * sign });
+    charges.push({ edge: 4, t, q: q * sign });
+  }
+  const spec = new MoleculeSpec({ name: name ?? 'key', verts, charges, color });
+  spec._apexAngle = apexAngle;
+  spec._notchDepth = depth;
+  spec._predicted = { kind: 'key', size: 1 };
+  return spec;
+}
+
+// A monomer carrying a notch on one side and a key tip on the other, so copies
+// dock head-to-tail into chains.
+export function dockingMonomer({
+  width = 11,
+  height = 7,
+  apexAngle = Math.PI / 3,
+  depth = 3.4,
+  q = 1,
+  chargeT = DEEP_T,
+  name = null,
+  color = null,
+} = {}) {
+  const hw = width / 2;
+  const hh = height / 2;
+  const nh = notchHalfWidth(apexAngle, depth);
+  // notch cut into the top edge; key tip protruding from the bottom edge
+  const verts = [
+    [-hw, -hh], // 0
+    [-nh, -hh], // 1  edge 1 descends to the protruding tip
+    [0, -hh - depth], // 2  tip
+    [nh, -hh], // 3  edge 3 continues along the bottom
+    [hw, -hh], // 4
+    [hw, hh], // 5
+    [nh, hh], // 6  right lip -> edge 6 descends into the notch
+    [0, hh - depth], // 7  notch apex
+    [-nh, hh], // 8  left lip
+    [-hw, hh], // 9
+  ];
+  const charges = [];
+  for (const t of chargeT) {
+    charges.push({ edge: 6, t, q: +q }); // notch flanks: +
+    charges.push({ edge: 7, t: 1 - t, q: +q });
+    charges.push({ edge: 1, t: 1 - t, q: -q }); // key flanks: −
+    charges.push({ edge: 2, t, q: -q });
+  }
+  const spec = new MoleculeSpec({ name: name ?? 'docking monomer', verts, charges, color });
+  spec._apexAngle = apexAngle;
+  spec._predicted = { kind: 'docking-chain', size: null };
+  return spec;
+}
+
 export function transformVerts(verts, pose) {
   const c = Math.cos(pose.angle);
   const s = Math.sin(pose.angle);

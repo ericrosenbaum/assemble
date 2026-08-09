@@ -351,8 +351,55 @@ a row and sheets need crowding before they can tile at all.
 The **molecule designer** panel in the UI lets you drag polygon corners, add
 corners, and tap edges to place `+`/`−` charge sites, then run copies of
 your design in the bath. Shapes serialize to/from JSON. (The rigid engine
-takes the convex hull of concave shapes; the soft engine handles them
-as-is.)
+handles concave shapes by decomposing them into convex collider pieces, so
+pockets survive — see below.)
+
+## Docking into a concave binding site
+
+Every shape above binds face-to-face. A **pocket** is different: a receptor
+with a V-notch cut into it, and a key whose tip fills that notch — the
+lock-and-key arrangement behind enzyme–substrate binding.
+
+This needed a new capability. Rapier's 2D colliders are convex, so the engine
+used to hand each molecule to the physics as a single convex hull and any
+pocket silently filled in. `src/geometry/decompose.js` now ear-clips a concave
+outline into triangles and greedily merges neighbours while the union stays
+convex (the receptor goes from 6 triangles to 3 pieces), and the rigid engine
+attaches one collider per piece. Convex shapes keep the old single-hull path,
+so every earlier preset is untouched. This works for any concave polygon,
+including ones drawn in the designer.
+
+| preset | contents | observed |
+| --- | --- | --- |
+| `dock-lock-key` | receptor + matching key | 10/12 receptors docked, every cluster a pair |
+| `dock-selectivity` | receptor + matching key + wider decoy | matching **5/14**, decoy **0/14** |
+| `dock-chain` | monomer with a notch one side, tip the other | dimers and short chains |
+
+![docking](results/dock-lock-key.gif)
+![selectivity](results/dock-selectivity.gif)
+
+*A key seating into the notch; and the selectivity test, where the green keys
+match and the pink decoys — same charges, wider apex — are left floating.*
+
+### Getting selectivity to actually work
+
+The decoy carries **identical charges** to the matching key, so any difference
+is shape alone. Two things had to be measured rather than assumed.
+
+First, *where* the charges sit. With them near the notch lips, anything that
+touches the pocket mouth collects most of the binding — a pose scan had a
+blunt stub out-binding the correct key (−143 vs −107). Burying them near the
+apex means only a ligand that penetrates the full depth reaches them, which is
+how a real buried active site earns its specificity.
+
+Second, the absolute energy scale. A pose scan over positions and rotations,
+rejecting anything that overlaps the receptor, puts the matching key at
+**−107** and the wide decoy at **−32** — a 3.4× ratio. But a ratio only
+discriminates at the right temperature, and the first run held at the ring
+presets' `kT`, where even the decoy's weak bond is hundreds of `kT`: matching
+and decoy both bound 43%. Scaling the charge down (`k = 1.2`) puts the pair at
+about 21 and 6 energy units, so holding near `kT ≈ 2.2` leaves the matching
+key at ~10 kT and the decoy at ~3 kT. That is the run in the table.
 
 ## Headless capture & experiments
 
