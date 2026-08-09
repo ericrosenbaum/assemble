@@ -271,12 +271,20 @@ of the face (`POLAR_T` in `src/shapes.js`) gives the face a head and a tail so
 it can only mate one way round, taking a reversed bond down to **11%** —
 weak enough to break in the selective window while correct bonds hold.
 
-| preset | pair | turns | ring |
-| --- | --- | --- | --- |
-| `tri-hex-4ring` | triangle⁺ + hexagon⁻ (k=1) | 60° + 120° | 4 molecules |
-| `square-hex-8ring` | square⁺ + hexagon⁻ (k=3) | 90° + 0° | 8 molecules |
-| `tri-hex-12ring` | triangle⁺ + hexagon⁻ (k=3) | 60° + 0° | 12 molecules |
-| `salt-lattice` | square⁺ + square⁻, all faces | — | checkerboard sheet |
+| preset | pair | turns | predicts | observed |
+| --- | --- | --- | --- | --- |
+| `tri-hex-4ring` | triangle + hexagon (k=1) | 60° + 120° | 4-ring | `[4,3]` |
+| `square-hex-8ring` | square + hexagon (k=3) | 90° + 0° | 8-ring | closes sometimes |
+| `tri-hex-12ring` | triangle + hexagon (k=3) | 60° + 0° | 12-ring | chains, rarely closes |
+| `salt-lattice` | square + square, all faces | — | checkerboard | 35/36 in one crystal |
+
+The two larger targets are honest partial results. Alternation and curvature
+are exactly right — chains are strictly A–B and curl consistently — but
+**closing** a big ring is a kinetics problem, not a geometry one: a chain has
+to reach precisely the ring length *and* find its own tail before growing
+past it. At the density that makes 12-membered chains, they overshoot to 17;
+diluting to stop the overshoot leaves them at 8. The 12-ring case shows the
+right structure everywhere except the last bond.
 
 The `k=3` hexagon contributes no turn at all, so it acts as a straight spacer:
 the squares or triangles supply every corner and the hexagons form the edges
