@@ -247,6 +247,43 @@ forever, which is why `hex-fiber` makes filaments rather than rings. And when
 adjacent charged faces (`m = 10/3`) is geometrically frustrated and only makes
 open aggregates.
 
+### Mixing two shapes
+
+The rule generalises. What actually closes a ring is that the **turns sum to a
+whole revolution**: each molecule contributes `t = π − φ`, where `φ` is the
+angle between its two charged faces, and `Σt = 2π`. For one species that
+collapses back to `m = 2n/(n−2k)`; for an alternating A/B ring of *p* pairs it
+becomes `p(t_A + t_B) = 2π`. So combinations can be read straight off a table
+of turns: square 90°, triangle 60°, hexagon 120°/60°/0° for k=1/2/3.
+
+Mixing needs one extra ingredient: **specificity**. Give both shapes ordinary
+`+`/`−` faces and A binds A as happily as it binds B, so you get random
+copolymer junk. The fix is ionic — every face of A carries `+` and every face
+of B carries `−`. A–A and B–B are then outright repulsive and the only stable
+bond is A–B, which forces strict alternation.
+
+That introduces a failure mode worth measuring rather than assuming. Once
+every face on a molecule shares a sign, A's outgoing face is just as attracted
+to B's outgoing face as to its incoming one, and such a reversed junction
+breaks closure. With the standard charge layout a reversed bond measured **86%
+as strong** as a correct one — hopeless. Clustering the charges toward one end
+of the face (`POLAR_T` in `src/shapes.js`) gives the face a head and a tail so
+it can only mate one way round, taking a reversed bond down to **11%** —
+weak enough to break in the selective window while correct bonds hold.
+
+| preset | pair | turns | ring |
+| --- | --- | --- | --- |
+| `tri-hex-4ring` | triangle⁺ + hexagon⁻ (k=1) | 60° + 120° | 4 molecules |
+| `square-hex-8ring` | square⁺ + hexagon⁻ (k=3) | 90° + 0° | 8 molecules |
+| `tri-hex-12ring` | triangle⁺ + hexagon⁻ (k=3) | 60° + 0° | 12 molecules |
+| `salt-lattice` | square⁺ + square⁻, all faces | — | checkerboard sheet |
+
+The `k=3` hexagon contributes no turn at all, so it acts as a straight spacer:
+the squares or triangles supply every corner and the hexagons form the edges
+between them. `salt-lattice` is the two-species version of a tiler — with
+`+` and `−` squares alternating, it builds a 2D analogue of a rock-salt
+crystal.
+
 The `*-sheet` presets charge every face instead of two. Opposite faces must
 carry opposite signs, since edge *i* meets edge *i+n/2* in an aligned tiling —
 so the first half of the edges get `+` and the rest `−`.

@@ -1,36 +1,58 @@
 // Scenario presets: a molecule set + box + placement + physics params +
 // temperature schedule, everything needed for a reproducible run.
 
-import { wedge, facePair, tiler, MoleculeSpec } from './shapes.js';
-import { TemperatureSchedule, scatterInstances } from './sim/engine.js';
+import { wedge, facePair, tiler, POLAR_T, POLAR_MIRROR_T, MoleculeSpec } from './shapes.js';
+import { TemperatureSchedule, scatterInstances, scatterMixture } from './sim/engine.js';
 import { makeRng } from './rng.js';
 
-// Box side that puts `count` copies of `spec` at a given area packing
-// fraction. Density matters as much as the charge parameters — too sparse and
-// molecules rarely meet, too dense and everything jams before it can anneal —
-// so shapes of different sizes are sized to a common fraction rather than a
-// hand-picked box each.
-export function boxForPacking(spec, count, packing = 0.17) {
-  return Math.round(Math.sqrt((count * Math.abs(spec.area())) / packing));
+// A two-species pair. Each species keeps + on its out-face and − on its
+// in-face, which is what gives a molecule a direction and makes chains curl
+// consistently instead of zigzagging. Species specificity comes from the
+// charge *positions* instead: A carries the same layout on both faces and B
+// the mirrored one, so a face only ever registers against the other species.
+const speciesA = (opts) => facePair({ chargeT: POLAR_T, chargeTk: POLAR_T, ...opts });
+const speciesB = (opts) =>
+  facePair({ chargeT: POLAR_MIRROR_T, chargeTk: POLAR_MIRROR_T, ...opts });
+
+// Box side that holds the given molecules at a target area packing fraction.
+// Density matters as much as the charge parameters — too sparse and molecules
+// rarely meet, too dense and everything jams before it can anneal — so shapes
+// of different sizes are sized to a common fraction rather than a hand-picked
+// box each.
+export function boxForPacking(specs, counts, packing = 0.17) {
+  const area = specs.reduce((a, s, i) => a + Math.abs(s.area()) * counts[i], 0);
+  return Math.round(Math.sqrt(area / packing));
 }
 
 export function buildScenario(name, overrides = {}) {
   const def = { ...(SCENARIOS[name] ?? SCENARIOS['wedge-8']).config, ...overrides };
-  const spec = def.spec();
-  const side = def.packing ? boxForPacking(spec, def.count, def.packing) : null;
+
+  // A scenario is either a single species (spec/count) or a mixture
+  // (species: [{spec, count}, ...]).
+  const mixture = def.species
+    ? def.species.map((s) => ({ spec: s.spec(), count: s.count }))
+    : [{ spec: def.spec(), count: def.count }];
+  const specs = mixture.map((m) => m.spec);
+  const counts = mixture.map((m) => m.count);
+
+  const side = def.packing ? boxForPacking(specs, counts, def.packing) : null;
   const box = { w: def.boxW ?? side, h: def.boxH ?? side };
   const rng = makeRng(def.seed);
-  const instances = scatterInstances({ count: def.count, box, spec, rng });
+  const instances =
+    specs.length > 1
+      ? scatterMixture({ specs, counts, box, rng })
+      : scatterInstances({ count: counts[0], box, spec: specs[0], rng });
+
   return {
     name,
-    specs: [spec],
+    specs,
     instances,
     box,
     seed: def.seed,
     params: def.params,
     paramsSoft: { ...SOFT_TUNED, ...(def.paramsSoft ?? {}) },
     schedule: new TemperatureSchedule(def.schedule),
-    nRing: spec._nRing,
+    nRing: specs[0]._nRing,
     def,
   };
 }
@@ -212,6 +234,98 @@ export const SCENARIOS = {
       count: 30,
       packing: 0.25,
       seed: 3,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
+  // --- two-species mixtures ---------------------------------------------
+  // Every face of species A carries +, every face of B carries −, so A cannot
+  // bind A and B cannot bind B: the only stable bond is A–B and structures
+  // alternate strictly. The ring size follows from the same turn-sum rule,
+  // now over both species — p pairs close when p(turn_A + turn_B) is a whole
+  // revolution. Faces use POLAR_T so a reversed junction is ~9x weaker.
+
+  'tri-hex-4ring': {
+    label: 'triangles + hexagons → 4-rings',
+    config: {
+      species: [
+        {
+          spec: () =>
+            speciesA({ n: 3, k: 1, name: 'triangle A', color: '#e8b04b' }),
+          count: 20,
+        },
+        {
+          spec: () =>
+            speciesB({ n: 6, k: 1, name: 'hexagon B', color: '#6c91bf' }),
+          count: 20,
+        },
+      ],
+      packing: 0.2,
+      seed: 12,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'square-hex-8ring': {
+    label: 'squares + hexagons → 8-rings',
+    config: {
+      species: [
+        {
+          spec: () =>
+            speciesA({ n: 4, k: 1, name: 'square A', color: '#7fb069' }),
+          count: 16,
+        },
+        {
+          spec: () =>
+            speciesB({ n: 6, k: 3, name: 'hexagon B', color: '#c76f8a' }),
+          count: 16,
+        },
+      ],
+      packing: 0.2,
+      seed: 14,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  'tri-hex-12ring': {
+    label: 'triangles + hexagons → 12-rings',
+    config: {
+      species: [
+        {
+          spec: () =>
+            speciesA({ n: 3, k: 1, name: 'triangle A', color: '#d98b4a' }),
+          count: 18,
+        },
+        {
+          spec: () =>
+            speciesB({ n: 6, k: 3, name: 'hexagon B', color: '#8a7fb0' }),
+          count: 18,
+        },
+      ],
+      packing: 0.2,
+      seed: 15,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+  'salt-lattice': {
+    label: 'two squares → checkerboard lattice',
+    config: {
+      species: [
+        {
+          spec: () =>
+            tiler({ n: 4, uniformSign: 1, chargeT: POLAR_T, name: 'square +', color: '#e8b04b' }),
+          count: 18,
+        },
+        {
+          spec: () =>
+            tiler({ n: 4, uniformSign: -1, chargeT: POLAR_T, name: 'square −', color: '#5fb0a5' }),
+          count: 18,
+        },
+      ],
+      packing: 0.4,
+      seed: 16,
       params: { ...TUNED },
       schedule: { ...LONG_ANNEAL },
     },

@@ -193,6 +193,28 @@ export function predictedAssembly(n, k) {
 // that made the wedge rings work.
 const GOLOMB_T = [0.2, 0.45, 0.8];
 
+// Polar face layout, for mixtures.
+//
+// A self-complementary monomer only ever mates its + face to a − face, so the
+// two faces cannot be confused. Ionic species can: with every face the same
+// sign, A's out-face is just as attracted to B's out-face as to B's in-face,
+// and a reversed junction breaks ring closure. Measured with the tuned kernel,
+// the symmetric-ish GOLOMB_T above makes a reversed bond 86% as strong as a
+// correct one — hopeless discrimination.
+//
+// Clustering the charges toward one end gives the face a head and a tail, so
+// it can only mate one way round. Same Golomb property (spacings 0.12/0.18/
+// 0.30 all distinct, so a slid face still catches at most one pair), but a
+// reversed bond now measures 11% of a correct one — weak enough to break in
+// the selective temperature window while correct bonds hold.
+export const POLAR_T = [0.08, 0.2, 0.38];
+// The mirrored layout. A species using POLAR_T on both faces and one using
+// POLAR_MIRROR_T on both faces bind only each other: measured with the tuned
+// kernel, the wanted A-B interface is -53.9 while A-A is +9.8 (repulsive),
+// B-B is -4.4 (8% of wanted), and a reversed junction is +53.9 — repelled
+// outright, because same-role faces end up carrying the same sign.
+export const POLAR_MIRROR_T = POLAR_T.map((t) => 1 - t);
+
 // Charges on one pair of faces: +q on edge 0, −q on edge k.
 // The − positions are mirrored (1 − t) because mating faces run in opposite
 // directions, so this is what puts the charges on top of each other.
@@ -201,16 +223,38 @@ export function facePair({
   k = 2,
   edgeLength = 5,
   q = 1,
+  // Charge positions along the two faces. By default edge k mirrors edge 0
+  // (t -> 1-t), which is what makes a monomer self-complementary: its own two
+  // faces register against each other.
+  //
+  // Passing the SAME positions for both faces instead makes the monomer
+  // unable to bind its own kind, because a face only registers against one
+  // carrying the mirrored positions. Two species — one using P on both faces,
+  // the other using 1-P — then bind only each other. That is how the mixed
+  // presets get species specificity while keeping the +/- asymmetry below.
   chargeT = GOLOMB_T,
+  chargeTk = null,
+  // Sign on each face, as [edge 0, edge k]. Keep these opposite: it is what
+  // gives a molecule a direction. A chain always runs out-face(+) to
+  // in-face(-), so every molecule is traversed the same way round and its
+  // turn always has the same sign.
+  //
+  // Making both faces one sign (an "ionic" monomer) also prevents self-
+  // binding, but destroys that handedness: the molecule can then be entered
+  // on either face, so its turn can go either way and chains zigzag with no
+  // net curvature instead of curling into rings. Use matched positions for
+  // specificity and keep the signs opposite.
+  signs = [+1, -1],
   name = null,
   color = null,
 } = {}) {
   const radius = circumradiusForEdge(n, edgeLength);
+  const tk = chargeTk ?? chargeT.map((t) => 1 - t);
   const charges = [];
-  for (const t of chargeT) {
-    charges.push({ edge: 0, t, q: +q });
-    charges.push({ edge: k % n, t: 1 - t, q: -q });
-  }
+  chargeT.forEach((t, i) => {
+    charges.push({ edge: 0, t, q: q * signs[0] });
+    charges.push({ edge: k % n, t: tk[i], q: q * signs[1] });
+  });
   const spec = new MoleculeSpec({
     name: name ?? `${n}gon-k${k}`,
     // point edge 0 outward along +x so the shapes read consistently on screen
@@ -220,23 +264,58 @@ export function facePair({
   });
   spec._n = n;
   spec._k = k;
-  spec._predicted = predictedAssembly(n, k);
+  spec._signs = signs;
+  // The turn this monomer contributes to a chain: the chain direction rotates
+  // by pi minus the angle between its two charged faces. A ring closes when
+  // the turns around it sum to a whole number of revolutions — the general
+  // form of m = 2n/(n-2k), and what lets two different shapes be combined.
+  spec._turn = Math.PI - (2 * Math.PI * (k % n)) / n;
+  spec._predicted =
+    signs[0] === signs[1]
+      ? { kind: 'ionic', size: null } // binds only the opposite species
+      : predictedAssembly(n, k);
   return spec;
+}
+
+// Total molecules in the smallest alternating A/B ring, or null if the turns
+// never sum to a whole revolution.
+export function predictedMixedRing(specA, specB, maxPairs = 60) {
+  const turn = specA._turn + specB._turn;
+  if (Math.abs(turn) < 1e-12) return { kind: 'chain', size: Infinity };
+  for (let p = 1; p <= maxPairs; p++) {
+    const turns = (p * turn) / (2 * Math.PI);
+    if (Math.abs(turns - Math.round(turns)) < 1e-9 && Math.round(turns) >= 1) {
+      return { kind: 'ring', size: 2 * p, pairs: p };
+    }
+  }
+  return { kind: 'open', size: null };
 }
 
 // Charges on every face, so the monomer tiles instead of closing a ring.
 // Opposite faces must carry opposite signs (edge i pairs with edge i + n/2 in
 // an aligned tiling), so the first half of the edges get +q and the rest −q.
 // Only defined for even n — odd polygons have no opposite-edge pairing.
-export function tiler({ n = 6, edgeLength = 5, q = 1, chargeT = GOLOMB_T, name = null, color = null } = {}) {
+export function tiler({
+  n = 6,
+  edgeLength = 5,
+  q = 1,
+  chargeT = GOLOMB_T,
+  // null: opposite faces carry opposite signs, so the monomer tiles with
+  // copies of itself. +1/−1: every face carries that sign, giving an ionic
+  // tiler that can only tile against the opposite species — two of them
+  // build a checkerboard lattice rather than a uniform sheet.
+  uniformSign = null,
+  name = null,
+  color = null,
+} = {}) {
   if (n % 2 !== 0) throw new Error(`tiler needs an even-sided polygon, got n=${n}`);
   const radius = circumradiusForEdge(n, edgeLength);
   const half = n / 2;
   const charges = [];
   for (let e = 0; e < half; e++) {
     for (const t of chargeT) {
-      charges.push({ edge: e, t, q: +q });
-      charges.push({ edge: e + half, t: 1 - t, q: -q });
+      charges.push({ edge: e, t, q: q * (uniformSign ?? +1) });
+      charges.push({ edge: e + half, t: 1 - t, q: q * (uniformSign ?? -1) });
     }
   }
   const spec = new MoleculeSpec({
@@ -264,15 +343,15 @@ export function transformVerts(verts, pose) {
 // determine the rigid transform exactly — chaining this is a more honest test
 // of the closure rule than assuming a ring radius, since it only asserts that
 // bonds mate and then asks whether the chain happens to close.
-export function mateNextPose(spec, pose) {
+export function mateNextPose(spec, pose, partner = spec) {
   const n = spec.verts.length;
   const k = spec._k % n;
   const world = transformVerts(spec.verts, pose);
   const t0 = world[(k + 1) % n]; // where the partner's vertex 0 must go
   const t1 = world[k]; //           where the partner's vertex 1 must go
 
-  const [v0x, v0y] = spec.verts[0];
-  const [v1x, v1y] = spec.verts[1];
+  const [v0x, v0y] = partner.verts[0];
+  const [v1x, v1y] = partner.verts[1];
   const angle =
     Math.atan2(t1[1] - t0[1], t1[0] - t0[0]) - Math.atan2(v1y - v0y, v1x - v0x);
   const c = Math.cos(angle);
@@ -280,10 +359,17 @@ export function mateNextPose(spec, pose) {
   return { x: t0[0] - (v0x * c - v0y * s), y: t0[1] - (v0x * s + v0y * c), angle };
 }
 
-// Chain m bonded copies starting from the identity pose.
-export function facePairChain(spec, m) {
+// Chain m bonded copies starting from the identity pose. `specs` may be a
+// single spec or a repeating sequence, so an alternating A/B ring is just
+// facePairChain([A, B], m).
+export function facePairChain(specs, m) {
+  const seq = Array.isArray(specs) ? specs : [specs];
   const poses = [{ x: 0, y: 0, angle: 0 }];
-  for (let i = 1; i < m; i++) poses.push(mateNextPose(spec, poses[i - 1]));
+  for (let i = 1; i < m; i++) {
+    const from = seq[(i - 1) % seq.length];
+    const to = seq[i % seq.length];
+    poses.push(mateNextPose(from, poses[i - 1], to));
+  }
   return poses;
 }
 

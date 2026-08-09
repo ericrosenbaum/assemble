@@ -8,6 +8,9 @@ import {
   mateNextPose,
   transformVerts,
   predictedAssembly,
+  predictedMixedRing,
+  POLAR_T,
+  POLAR_MIRROR_T,
 } from '../src/shapes.js';
 
 function transform(verts, pose) {
@@ -184,6 +187,63 @@ for (const n of [4, 6, 8]) {
 
 // non-integer m -> no closure predicted
 check('n=5 k=1: no ring closes (10/3 is not an integer)', predictedAssembly(5, 1).kind === 'open');
+
+// --- two-species mixtures ---
+// Ionic species (every face one sign) can only bond to the opposite species,
+// so rings alternate. Closure is the same turn-sum rule applied across both.
+console.log('\n-- mixed A/B rings --');
+for (const [na, ka, nb, kb, expect] of [
+  [3, 1, 6, 1, 4], // triangle + hexagon
+  [4, 1, 6, 3, 8], // square + hexagon spacer
+  [3, 1, 6, 3, 12], // triangle + hexagon spacer
+  [4, 1, 4, 1, 4], // square + square, alternating
+]) {
+  // species specificity from matched charge positions; the +/- asymmetry is
+  // kept so each molecule still has a direction and chains curl consistently
+  const A = facePair({ n: na, k: ka, chargeT: POLAR_T, chargeTk: POLAR_T });
+  const B = facePair({ n: nb, k: kb, chargeT: POLAR_MIRROR_T, chargeTk: POLAR_MIRROR_T });
+  const tag = `${na}gon(k${ka})A / ${nb}gon(k${kb})B`;
+
+  const pred = predictedMixedRing(A, B);
+  check(`${tag}: predicts a ${expect}-molecule ring`, pred.kind === 'ring' && pred.size === expect);
+
+  const m = pred.size;
+  const poses = facePairChain([A, B], m);
+  const seq = Array.from({ length: m }, (_, i) => (i % 2 === 0 ? A : B));
+  const closing = mateNextPose(seq[m - 1], poses[m - 1], seq[0]);
+  const dPos = Math.hypot(closing.x - poses[0].x, closing.y - poses[0].y);
+  const dAng = Math.abs(
+    Math.atan2(Math.sin(closing.angle - poses[0].angle), Math.cos(closing.angle - poses[0].angle)),
+  );
+  check(
+    `${tag}: ${m} molecules close (gap ${dPos.toExponential(2)}, angle ${dAng.toExponential(2)})`,
+    dPos < 1e-9 && dAng < 1e-9,
+  );
+
+  // alternating species around the ring, and no two centres on top of another
+  let minSep = Infinity;
+  for (let a = 0; a < m; a++)
+    for (let b = a + 1; b < m; b++)
+      minSep = Math.min(minSep, Math.hypot(poses[a].x - poses[b].x, poses[a].y - poses[b].y));
+  check(`${tag}: ring has no self-overlap (min sep ${minSep.toFixed(2)})`, minSep > 2);
+
+  // Each species must carry its layout on BOTH faces (that is what stops it
+  // binding its own kind), and the two species must use mirrored layouts.
+  const facesOf = (s) => [0, s._k % s.verts.length].map((e) =>
+    s.charges.filter((c) => c.edge === e).map((c) => c.t).sort((x, y) => x - y),
+  );
+  const [a0, ak] = facesOf(A);
+  const [b0] = facesOf(B);
+  const same = (u, v) => u.length === v.length && u.every((x, i) => Math.abs(x - v[i]) < 1e-9);
+  check(`${tag}: species A uses one layout on both faces`, same(a0, ak));
+  check(
+    `${tag}: species B layout mirrors A's (so only A–B registers)`,
+    same(b0, a0.map((t) => 1 - t).sort((x, y) => x - y)),
+  );
+  // and the +/- direction is retained, so molecules still have handedness
+  const signsA = new Set(A.charges.map((c) => Math.sign(c.q)));
+  check(`${tag}: species A keeps opposite-signed faces (handedness)`, signsA.size === 2);
+}
 
 // tilers: opposite faces must carry opposite charge, or the sheet can't bond
 for (const n of [4, 6, 8]) {

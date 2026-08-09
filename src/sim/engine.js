@@ -62,6 +62,47 @@ export class BaseEngine {
 // area-based effective radius and progressively relaxes the spacing
 // constraint so the requested count always fits (contacts at t=0 just get
 // pushed apart by the collision forces).
+// Place a mixture of species. Molecules are interleaved rather than placed
+// species-by-species, so the starting state is genuinely mixed instead of
+// segregated — otherwise a two-species run would spend its whole anneal just
+// undoing the initial demixing.
+export function scatterMixture({ specs, counts, box, rng, margin = 1 }) {
+  const order = [];
+  for (let i = 0; i < specs.length; i++) for (let c = 0; c < counts[i]; c++) order.push(i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  const maxEdge = Math.max(...specs.map((s) => s.boundingRadius()));
+  const meanArea = specs.reduce((a, s, i) => a + Math.abs(s.area()) * counts[i], 0) / order.length;
+  const rEdge = maxEdge * 0.8 + margin;
+  let minDist = 2.3 * Math.sqrt(meanArea / Math.PI);
+  const placed = [];
+  while (placed.length < order.length) {
+    let attempts = 0;
+    while (placed.length < order.length && attempts < 5000) {
+      attempts++;
+      const x = rEdge + rng.next() * (box.w - 2 * rEdge) - box.w / 2;
+      const y = rEdge + rng.next() * (box.h - 2 * rEdge) - box.h / 2;
+      let ok = true;
+      for (const p of placed) {
+        const dx = p.x - x;
+        const dy = p.y - y;
+        if (dx * dx + dy * dy < minDist * minDist) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      placed.push({ spec: order[placed.length], x, y, angle: rng.next() * Math.PI * 2 });
+    }
+    minDist *= 0.85;
+    if (minDist < 0.5) break;
+  }
+  return placed;
+}
+
 export function scatterInstances({ specIndex = 0, count, box, spec, rng, margin = 1 }) {
   const placed = [];
   const rEdge = spec.boundingRadius() * 0.8 + margin; // keep clear of walls
