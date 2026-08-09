@@ -11,6 +11,8 @@ import {
   predictedMixedRing,
   POLAR_T,
   POLAR_MIRROR_T,
+  hub,
+  rod,
 } from '../src/shapes.js';
 
 function transform(verts, pose) {
@@ -243,6 +245,110 @@ for (const [na, ka, nb, kb, expect] of [
   // and the +/- direction is retained, so molecules still have handedness
   const signsA = new Set(A.charges.map((c) => Math.sign(c.q)));
   check(`${tag}: species A keeps opposite-signed faces (handedness)`, signsA.size === 2);
+}
+
+// --- hub and arm: stars ---
+// A hub carries one sign on every face and an arm carries the other on a
+// single end, so the only possible bond is hub-arm. Check that n arms mate
+// flush onto an n-face hub, that their charges land on top of each other, and
+// that the arms do not run into one another.
+console.log('\n-- hub-and-arm stars --');
+{
+  // separating-axis overlap depth between two convex polygons; <= 0 is disjoint
+  const overlap = (A, B) => {
+    let best = Infinity;
+    for (const P of [A, B]) {
+      for (let i = 0; i < P.length; i++) {
+        const j = (i + 1) % P.length;
+        const ax = -(P[j][1] - P[i][1]);
+        const ay = P[j][0] - P[i][0];
+        const len = Math.hypot(ax, ay);
+        const nx = ax / len;
+        const ny = ay / len;
+        let a0 = Infinity;
+        let a1 = -Infinity;
+        let b0 = Infinity;
+        let b1 = -Infinity;
+        for (const p of A) {
+          const d = p[0] * nx + p[1] * ny;
+          a0 = Math.min(a0, d);
+          a1 = Math.max(a1, d);
+        }
+        for (const p of B) {
+          const d = p[0] * nx + p[1] * ny;
+          b0 = Math.min(b0, d);
+          b1 = Math.max(b1, d);
+        }
+        best = Math.min(best, Math.min(a1, b1) - Math.max(a0, b0));
+      }
+    }
+    return best;
+  };
+
+  for (const n of [3, 4, 6]) {
+    const H = hub({ n });
+    const A = rod({});
+    const tag = `${n}-armed star`;
+
+    // mate one arm onto each hub face
+    const poses = [];
+    for (let e = 0; e < n; e++) {
+      poses.push(mateNextPose({ ...H, _k: e, verts: H.verts }, { x: 0, y: 0, angle: 0 }, A));
+    }
+
+    const hSites = H.chargeSites();
+    const aSites = A.chargeSites();
+    let maxGap = 0;
+    let signsOk = true;
+    for (let e = 0; e < n; e++) {
+      const placed = transformVerts(
+        aSites.map(([x, y]) => [x, y]),
+        poses[e],
+      );
+      for (let i = 0; i < hSites.length; i++) {
+        if (H.charges[i].edge !== e) continue;
+        let best = Infinity;
+        let bq = 0;
+        for (let j = 0; j < placed.length; j++) {
+          const d = Math.hypot(hSites[i][0] - placed[j][0], hSites[i][1] - placed[j][1]);
+          if (d < best) {
+            best = d;
+            bq = aSites[j][2];
+          }
+        }
+        maxGap = Math.max(maxGap, best);
+        if (hSites[i][2] * bq >= 0) signsOk = false;
+      }
+    }
+    check(`${tag}: arm charges land on hub charges (gap ${maxGap.toExponential(2)})`, maxGap < 1e-9);
+    check(`${tag}: mating charges are opposite`, signsOk);
+
+    const armPolys = poses.map((p) => transformVerts(A.verts, p));
+    let worstArm = -Infinity;
+    for (let a = 0; a < n; a++) {
+      for (let b = a + 1; b < n; b++) worstArm = Math.max(worstArm, overlap(armPolys[a], armPolys[b]));
+    }
+    let worstHub = -Infinity;
+    for (const poly of armPolys) worstHub = Math.max(worstHub, overlap(poly, H.verts));
+    check(`${tag}: arms do not overlap each other (${worstArm.toFixed(3)})`, worstArm <= 1e-9);
+    check(`${tag}: arms do not overlap the hub (${worstHub.toFixed(3)})`, worstHub <= 1e-9);
+
+    // the whole design rests on like-species contacts being repulsive
+    const hubSigns = new Set(H.charges.map((c) => Math.sign(c.q)));
+    const armSigns = new Set(A.charges.map((c) => Math.sign(c.q)));
+    check(
+      `${tag}: hub-hub and arm-arm are repulsive (hub ${[...hubSigns]}, arm ${[...armSigns]})`,
+      hubSigns.size === 1 && armSigns.size === 1 && [...hubSigns][0] === -[...armSigns][0],
+    );
+    check(`${tag}: hub offers exactly ${n} binding faces`, new Set(H.charges.map((c) => c.edge)).size === n);
+  }
+
+  // a double-ended strut is divalent, so it bridges hubs instead of capping one
+  const strut = rod({ bothEnds: true });
+  check(
+    'double-ended strut has two charged faces',
+    new Set(strut.charges.map((c) => c.edge)).size === 2 && strut._valence === 2,
+  );
 }
 
 // tilers: opposite faces must carry opposite charge, or the sheet can't bond

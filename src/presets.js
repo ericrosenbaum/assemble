@@ -1,7 +1,16 @@
 // Scenario presets: a molecule set + box + placement + physics params +
 // temperature schedule, everything needed for a reproducible run.
 
-import { wedge, facePair, tiler, POLAR_T, POLAR_MIRROR_T, MoleculeSpec } from './shapes.js';
+import {
+  wedge,
+  facePair,
+  tiler,
+  hub,
+  rod,
+  POLAR_T,
+  POLAR_MIRROR_T,
+  MoleculeSpec,
+} from './shapes.js';
 import { TemperatureSchedule, scatterInstances, scatterMixture } from './sim/engine.js';
 import { makeRng } from './rng.js';
 
@@ -309,6 +318,71 @@ export const SCENARIOS = {
       schedule: { ...LONG_ANNEAL },
     },
   },
+  // --- hub and arm: stars ------------------------------------------------
+  // From the article's open-ended "make your own molecule" page. A hub
+  // carries + on every face; an arm is a long rectangle with − on one short
+  // face only. Hub–hub and arm–arm are therefore repulsive and the only bond
+  // is hub–arm, so each hub gathers as many arms as it has faces and the
+  // result is a finite star. Nothing has to close, which is why these
+  // assemble far more readily than the larger rings.
+  //
+  // Arms are given in slight excess of the hub valence so hubs can saturate,
+  // and the box is packed a little denser than the ring presets since
+  // encounter rate is the only thing limiting these.
+
+  'star-3': {
+    label: 'triangles + rods → 3-armed stars',
+    config: {
+      species: [
+        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#e8b04b' }), count: 10 },
+        { spec: () => rod({ name: 'arm', color: '#6c91bf' }), count: 34 },
+      ],
+      packing: 0.22,
+      seed: 21,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'star-4': {
+    label: 'squares + rods → 4-armed crosses',
+    config: {
+      species: [
+        { spec: () => hub({ n: 4, name: 'square hub', color: '#7fb069' }), count: 8 },
+        { spec: () => rod({ name: 'arm', color: '#c76f8a' }), count: 36 },
+      ],
+      packing: 0.22,
+      seed: 22,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'star-6': {
+    label: 'hexagons + rods → 6-armed asterisks',
+    config: {
+      species: [
+        { spec: () => hub({ n: 6, name: 'hexagon hub', color: '#8a7fb0' }), count: 6 },
+        { spec: () => rod({ name: 'arm', color: '#d98b4a' }), count: 40 },
+      ],
+      packing: 0.22,
+      seed: 23,
+      params: { ...TUNED },
+      schedule: { ...ANNEAL },
+    },
+  },
+  'strut-net': {
+    label: 'triangles + double-ended struts → network',
+    config: {
+      species: [
+        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#5fb0a5' }), count: 14 },
+        { spec: () => rod({ bothEnds: true, length: 12, name: 'strut', color: '#e8b04b' }), count: 21 },
+      ],
+      packing: 0.22,
+      seed: 24,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
   'salt-lattice': {
     label: 'two squares → checkerboard lattice',
     config: {

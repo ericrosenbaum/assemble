@@ -1,7 +1,7 @@
 // Molecule designer: edit a polygon, paint +/- charges on its edges, then
 // drop copies into the simulation. Touch-friendly (pointer events).
 
-import { MoleculeSpec, wedge, facePair, tiler } from '../shapes.js';
+import { MoleculeSpec, wedge, facePair, tiler, hub, rod } from '../shapes.js';
 
 // Each starter is a working design, so editing one is a starting point rather
 // than a blank page. The polygon entries are labelled with what they build:
@@ -18,6 +18,9 @@ const STARTERS = {
   'hexagon → honeycomb': () => tiler({ n: 6 }),
   'triangle → 6-rosette': () => facePair({ n: 3, k: 1 }),
   'pentagon → 10-ring': () => facePair({ n: 5, k: 2 }),
+  // hub-and-arm: pair these two to build stars
+  'triangle hub (+ all faces)': () => hub({ n: 3 }),
+  'rod arm (− one end)': () => rod({}),
   'blank square': () =>
     new MoleculeSpec({
       name: 'square',

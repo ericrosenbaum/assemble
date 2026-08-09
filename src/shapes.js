@@ -329,6 +329,89 @@ export function tiler({
   return spec;
 }
 
+// ---------------------------------------------------------------------------
+// Hub-and-arm monomers
+//
+// A different structural class from the ring family. There every monomer has
+// exactly two binding faces, so it can only extend a chain. Here one species
+// is a multi-valent hub (the same sign on every face) and the other is a
+// monovalent arm (one charged end), so the product is a finite star: an arm
+// binds a hub and that is the end of it.
+//
+// Specificity comes for free — hub faces all +, arm faces all −, so hub-hub
+// and arm-arm are repulsive and only hub-arm binds. And because nothing has
+// to close, the cyclisation kinetics that limits large rings never arises.
+// ---------------------------------------------------------------------------
+
+// Regular n-gon carrying the SAME sign on every face. tiler() cannot be used
+// for this: it rejects odd n (so no triangles) and gives opposite faces
+// opposite signs by design, which is the opposite of what a hub wants.
+export function hub({
+  n = 3,
+  edgeLength = 5,
+  q = 1,
+  sign = +1,
+  chargeT = GOLOMB_T,
+  name = null,
+  color = null,
+} = {}) {
+  const radius = circumradiusForEdge(n, edgeLength);
+  const charges = [];
+  for (let e = 0; e < n; e++) {
+    for (const t of chargeT) charges.push({ edge: e, t, q: q * sign });
+  }
+  const spec = new MoleculeSpec({
+    name: name ?? `hub${n}`,
+    verts: regularPolygon(n, radius, -Math.PI / n),
+    charges,
+    color,
+  });
+  spec._n = n;
+  spec._valence = n;
+  spec._edgeLength = edgeLength;
+  spec._predicted = { kind: 'hub', size: n };
+  return spec;
+}
+
+// Rectangular arm: charges on one short face (or both), mirrored so they land
+// on top of a hub face's charges. `width` must equal the hub's edge length —
+// the mirrored positions only coincide if the two faces are the same length.
+//
+// Vertices are wound so edge 0 is the charged short face, matching the
+// convention mateNextPose() uses for the incoming face.
+export function rod({
+  width = 5,
+  length = 15,
+  q = 1,
+  sign = -1,
+  bothEnds = false,
+  chargeT = GOLOMB_T,
+  name = null,
+  color = null,
+} = {}) {
+  const verts = [
+    [0, -width / 2],
+    [0, width / 2],
+    [-length, width / 2],
+    [-length, -width / 2],
+  ];
+  const charges = [];
+  for (const t of chargeT) charges.push({ edge: 0, t: 1 - t, q: q * sign });
+  // edge 2 is the far short face, traversed the other way round
+  if (bothEnds) for (const t of chargeT) charges.push({ edge: 2, t: 1 - t, q: q * sign });
+  const spec = new MoleculeSpec({
+    name: name ?? (bothEnds ? 'strut' : 'arm'),
+    verts,
+    charges,
+    color,
+  });
+  spec._armLength = length;
+  spec._edgeLength = width;
+  spec._valence = bothEnds ? 2 : 1;
+  spec._predicted = { kind: bothEnds ? 'strut' : 'arm', size: null };
+  return spec;
+}
+
 export function transformVerts(verts, pose) {
   const c = Math.cos(pose.angle);
   const s = Math.sin(pose.angle);

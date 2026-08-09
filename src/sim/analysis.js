@@ -73,16 +73,37 @@ export function countRings(graph) {
   return rings;
 }
 
+// Stars: one hub with arms hanging off it. A cluster qualifies when exactly
+// one member has two or more bonds and every other member has exactly one —
+// i.e. a tree of depth 1. Returns the arm counts, so [3,3,2] means two full
+// 3-armed stars and one with a vacancy.
+//
+// Ring detection can never see these (it wants every member at degree 2), so
+// without this the hub-and-arm scenarios would report nothing at all.
+export function countStars(graph) {
+  const out = [];
+  for (const comp of clusters(graph)) {
+    if (comp.length < 3) continue; // a lone hub+arm pair isn't a star yet
+    const degrees = comp.map((m) => graph.adj.get(m)?.size ?? 0);
+    const hubs = degrees.filter((d) => d >= 2).length;
+    const leaves = degrees.filter((d) => d === 1).length;
+    if (hubs === 1 && leaves === comp.length - 1) out.push(comp.length - 1);
+  }
+  return out.sort((a, b) => b - a);
+}
+
 export function stats(sites, opts = {}) {
   const graph = bondGraph(sites, opts);
   const comps = clusters(graph);
   const sizes = comps.map((c) => c.length).sort((a, b) => b - a);
   const rings = countRings(graph);
+  const stars = countStars(graph);
   return {
     clusters: comps.length,
     largest: sizes[0] ?? 0,
     sizes: sizes.slice(0, 8),
     rings,
+    stars,
     bonded: sizes.filter((s) => s > 1).reduce((a, b) => a + b, 0),
   };
 }

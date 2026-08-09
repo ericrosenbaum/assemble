@@ -96,9 +96,21 @@ function updateStats() {
   // thread); in-thread we compute them here.
   const st = state.engine.stats ?? stats(state.engine.chargeWorld());
   if (!st) return;
+  // Report whichever structure this scenario actually builds: rings for the
+  // polygon family, stars for the hub-and-arm ones.
+  const tally = (arr, unit) => {
+    const counts = new Map();
+    for (const v of arr) counts.set(v, (counts.get(v) ?? 0) + 1);
+    return [...counts]
+      .sort((a, b) => b[0] - a[0])
+      .map(([v, n]) => (n > 1 ? `${n}×${v}-${unit}` : `${v}-${unit}`))
+      .join(', ');
+  };
   const rings = st.rings.length
-    ? `rings: ${st.rings.map((r) => `${r}-ring`).join(', ')}`
-    : 'rings: none yet';
+    ? `rings: ${tally(st.rings, 'ring')}`
+    : st.stars?.length
+      ? `stars: ${tally(st.stars, 'arm')}`
+      : 'rings: none yet';
   const rate = state.engine.stepsPerSec
     ? `   ${state.engine.stepsPerSec.toLocaleString()} steps/s`
     : '';

@@ -295,6 +295,48 @@ between them. `salt-lattice` is the two-species version of a tiler — with
 `+` and `−` squares alternating, it builds a 2D analogue of a rock-salt
 crystal.
 
+### Hubs and arms: stars
+
+The article's other example is the open-ended "make your own molecule" page —
+pick some shapes, paint charges round their edges, and see what appears. A
+nice design from it: **a triangle with `+` on every face, and a long rectangle
+with a single `−` on one short face.**
+
+That combination is different in kind from everything above. In the ring
+family each monomer has exactly two binding faces, so it can only extend a
+chain. Here one species is a multi-valent **hub** and the other a monovalent
+**arm**, so each hub gathers as many arms as it has faces and the product is a
+finite **star**. Two things make it easy:
+
+- **Specificity is free.** All hub faces `+`, all arm faces `−`, so hub–hub and
+  arm–arm are outright repulsive and the only bond is hub–arm. No
+  position-pattern trickery of the sort the alternating rings needed.
+- **Nothing has to close.** An arm binds a hub and it's done, so the
+  cyclisation bottleneck that limited the 8- and 12-rings never arises — these
+  assemble quickly and reliably.
+
+| preset | hub | arm | observed |
+| --- | --- | --- | --- |
+| `star-3` | triangle | rod, `−` one end | `[3,3,3,2,2,2]` |
+| `star-4` | square | rod | `[4,3,3,2,2,2]` |
+| `star-6` | hexagon | rod | `[6,6,4,3,2,2]` |
+| `strut-net` | triangle | strut, `−` **both** ends | branched network, largest 11 |
+
+![3-armed stars](results/star-3.gif)
+![6-armed asterisks](results/star-6.gif)
+
+*Triangles gathering three arms each; hexagons gathering six.*
+
+Those censuses are arm counts per star, so `[3,3,3,2,2,2]` is three complete
+3-armed stars and three still one arm short. Ring detection can't see stars at
+all (it wants every member at degree 2), so `countStars` in
+`src/sim/analysis.js` reports them instead, and the HUD shows whichever of the
+two a scenario actually builds.
+
+Making the rod double-ended (`strut-net`) changes the outcome completely: the
+arm becomes divalent, bridging hubs rather than capping one, and the finite
+stars give way to an extended branched network.
+
 The `*-sheet` presets charge every face instead of two. Opposite faces must
 carry opposite signs, since edge *i* meets edge *i+n/2* in an aligned tiling —
 so the first half of the edges get `+` and the rest `−`.
