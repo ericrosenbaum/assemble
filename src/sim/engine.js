@@ -56,6 +56,26 @@ export class BaseEngine {
   applySchedule() {
     if (this.schedule) this.params.kT = this.schedule.at(this.stepCount);
   }
+
+  // Write world-space outline vertices into a flat preallocated buffer as
+  // [x0,y0, x1,y1, ...], molecule after molecule.
+  //
+  // outlines() returns nested arrays, which is convenient but allocates one
+  // array per molecule plus one per vertex — every frame. At a few hundred
+  // molecules that is invisible; at tens of thousands it is hundreds of
+  // thousands of allocations per snapshot, and the GC cost swamps the
+  // simulation. Backends override this to fill the buffer directly; the
+  // default keeps the contract for anything that hasn't.
+  fillOutlines(out) {
+    let k = 0;
+    for (const poly of this.outlines()) {
+      for (const [x, y] of poly) {
+        out[k++] = x;
+        out[k++] = y;
+      }
+    }
+    return k;
+  }
 }
 
 // Random non-overlapping-ish initial placement inside the box. Uses an
@@ -66,6 +86,52 @@ export class BaseEngine {
 // species-by-species, so the starting state is genuinely mixed instead of
 // segregated — otherwise a two-species run would spend its whole anneal just
 // undoing the initial demixing.
+// Rejection sampling checked each candidate against every molecule already
+// placed, which is O(N^2) and became the slowest part of starting a large run.
+// A hash grid at the rejection radius makes it O(N): only the 3x3
+// neighbourhood can contain a violating neighbour.
+//
+// The radius shrinks as the box fills (see the callers), so the grid is rebuilt
+// whenever it changes rather than being kept incrementally.
+class PlacementGrid {
+  constructor() {
+    this.cell = 1;
+    this.map = new Map();
+  }
+  reset(cell, placed) {
+    this.cell = cell;
+    this.map = new Map();
+    for (let i = 0; i < placed.length; i++) this.add(placed[i]);
+  }
+  key(x, y) {
+    return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)}`;
+  }
+  add(p) {
+    const k = this.key(p.x, p.y);
+    let bucket = this.map.get(k);
+    if (!bucket) this.map.set(k, (bucket = []));
+    bucket.push(p);
+  }
+  // true if anything already placed is within `dist` of (x, y)
+  crowded(x, y, dist) {
+    const d2 = dist * dist;
+    const cx = Math.floor(x / this.cell);
+    const cy = Math.floor(y / this.cell);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const bucket = this.map.get(`${cx + ox},${cy + oy}`);
+        if (!bucket) continue;
+        for (const p of bucket) {
+          const dx = p.x - x;
+          const dy = p.y - y;
+          if (dx * dx + dy * dy < d2) return true;
+        }
+      }
+    }
+    return false;
+  }
+}
+
 export function scatterMixture({ specs, counts, box, rng, margin = 1 }) {
   const order = [];
   for (let i = 0; i < specs.length; i++) for (let c = 0; c < counts[i]; c++) order.push(i);
@@ -79,23 +145,18 @@ export function scatterMixture({ specs, counts, box, rng, margin = 1 }) {
   const rEdge = maxEdge * 0.8 + margin;
   let minDist = 2.3 * Math.sqrt(meanArea / Math.PI);
   const placed = [];
+  const grid = new PlacementGrid();
   while (placed.length < order.length) {
+    grid.reset(minDist, placed);
     let attempts = 0;
     while (placed.length < order.length && attempts < 5000) {
       attempts++;
       const x = rEdge + rng.next() * (box.w - 2 * rEdge) - box.w / 2;
       const y = rEdge + rng.next() * (box.h - 2 * rEdge) - box.h / 2;
-      let ok = true;
-      for (const p of placed) {
-        const dx = p.x - x;
-        const dy = p.y - y;
-        if (dx * dx + dy * dy < minDist * minDist) {
-          ok = false;
-          break;
-        }
-      }
-      if (!ok) continue;
-      placed.push({ spec: order[placed.length], x, y, angle: rng.next() * Math.PI * 2 });
+      if (grid.crowded(x, y, minDist)) continue;
+      const p = { spec: order[placed.length], x, y, angle: rng.next() * Math.PI * 2 };
+      placed.push(p);
+      grid.add(p);
     }
     minDist *= 0.85;
     if (minDist < 0.5) break;
@@ -107,23 +168,18 @@ export function scatterInstances({ specIndex = 0, count, box, spec, rng, margin 
   const placed = [];
   const rEdge = spec.boundingRadius() * 0.8 + margin; // keep clear of walls
   let minDist = 2.3 * Math.sqrt(spec.area() / Math.PI);
+  const grid = new PlacementGrid();
   while (placed.length < count) {
+    grid.reset(minDist, placed);
     let attempts = 0;
     while (placed.length < count && attempts < 5000) {
       attempts++;
       const x = rEdge + rng.next() * (box.w - 2 * rEdge) - box.w / 2;
       const y = rEdge + rng.next() * (box.h - 2 * rEdge) - box.h / 2;
-      let ok = true;
-      for (const p of placed) {
-        const dx = p.x - x;
-        const dy = p.y - y;
-        if (dx * dx + dy * dy < minDist * minDist) {
-          ok = false;
-          break;
-        }
-      }
-      if (!ok) continue;
-      placed.push({ spec: specIndex, x, y, angle: rng.next() * Math.PI * 2 });
+      if (grid.crowded(x, y, minDist)) continue;
+      const p = { spec: specIndex, x, y, angle: rng.next() * Math.PI * 2 };
+      placed.push(p);
+      grid.add(p);
     }
     minDist *= 0.85; // relax and keep going if the box is crowded
     if (minDist < 0.5) break;

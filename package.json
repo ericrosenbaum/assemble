@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/geometry.test.mjs && node test/forces.test.mjs && node test/decompose.test.mjs && node test/stability.test.mjs",
-    "test:fast": "node test/geometry.test.mjs && node test/forces.test.mjs && node test/decompose.test.mjs",
+    "test": "node test/geometry.test.mjs && node test/forces.test.mjs && node test/decompose.test.mjs && node test/analysis.test.mjs && node test/stability.test.mjs",
+    "test:fast": "node test/geometry.test.mjs && node test/forces.test.mjs && node test/decompose.test.mjs && node test/analysis.test.mjs",
     "bench": "node tools/bench.mjs"
   },
   "dependencies": {

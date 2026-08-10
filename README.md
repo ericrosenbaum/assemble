@@ -119,6 +119,65 @@ Measured with `npm run bench` (Node 22, 4-core container):
 | soft  | 32  | 525 steps/s   | 832 steps/s   | 1.6× |
 | soft  | 64  | 183 steps/s   | 397 steps/s   | 2.2× |
 
+### Scaling to tens of thousands of molecules
+
+The optimisations above cut the *constant*, but three things were still
+quadratic in the number of molecules, and quadratic wins every argument
+eventually. Measured at constant density, cost per doubling was climbing
+towards 4× — 2,400 molecules ran at 29 steps/s, and 30,000 extrapolated to
+about **0.2 steps/s**, a week per anneal.
+
+All three had the same shape — "check everything against everything" — and the
+same fix: bucket by position and check only the neighbourhood.
+
+- **The charge kernel.** Molecule-pair culling rejected distant pairs cheaply
+  but still *visited* all M²/2 of them. Centroids are now bucketed at the
+  interaction reach, so the visit count is proportional to genuinely nearby
+  pairs. Exactness is unchanged and still pinned by `test/forces.test.mjs`
+  against the all-pairs reference.
+- **Bond detection.** `bondGraph` compared every charge site to every other —
+  and it runs on a timer for the live HUD. At 10,000 molecules that is 60,000
+  sites and 1.8 billion comparisons per call. Now spatially hashed at the bond
+  radius: **106 ms**. `test/analysis.test.mjs` checks it finds exactly the
+  bonds a brute-force scan finds, on assembled and unassembled states.
+- **Initial placement.** Rejection sampling tested each candidate against every
+  molecule already placed. Now hashed at the rejection radius. The RNG is drawn
+  in the same order, so placements are bit-identical and every tuned preset is
+  untouched.
+
+Snapshots were also allocating one array per molecule plus one per vertex,
+every frame; engines now fill a preallocated buffer directly.
+
+The result is linear scaling — cost doubles when the molecule count doubles:
+
+| molecules | before | after |
+| --- | --- | --- |
+| 300 | 398 steps/s | 518 steps/s |
+| 600 | 212 steps/s | 293 steps/s |
+| 1,200 | 87 steps/s | 147 steps/s |
+| 2,400 | 29 steps/s | 70 steps/s |
+| 4,800 | ~7 steps/s (extrapolated) | 33 steps/s |
+
+Throughput is a flat ~165,000 molecule-steps/s at every size, which makes
+extrapolation trustworthy for the first time. A 10,000-molecule run — 60,000
+charge sites — builds in 0.4 s, runs at 11 steps/s, stays thermally stable
+(peak 0.88× equilibrium), and had 9,002 molecules bonded into 15 closed rings
+after 4,000 steps.
+
+Where the remaining time goes, profiled at 2,400 molecules:
+
+| phase | ms/step | |
+| --- | --- | --- |
+| charge kernel | 6.72 | 51% |
+| pose readback from WASM | 2.49 | 19% |
+| impulses + bookkeeping | 2.54 | 19% |
+| Rapier contact solve | 1.37 | 10% |
+
+Worth noting because it is counterintuitive: **the physics engine is not the
+bottleneck**. Rapier is a tenth of the step. Anything faster has to attack our
+own force kernel — parallelising it across workers, or moving the rigid engine
+onto the GPU the way the soft engine already is.
+
 In the app the gain is larger still, because the old ceiling was the render
 loop rather than the engine: **1,200 → ~4,700 steps/s** at 32 molecules.
 

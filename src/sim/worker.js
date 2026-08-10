@@ -55,15 +55,8 @@ function newBuffer(siteCount) {
 }
 
 function fillSnapshot(buf) {
-  const outlines = engine.outlines();
-  const oxy = buf.outlineXY;
-  let k = 0;
-  for (const poly of outlines) {
-    for (const [x, y] of poly) {
-      oxy[k++] = x;
-      oxy[k++] = y;
-    }
-  }
+  // Writes straight into the transferable — see BaseEngine.fillOutlines().
+  engine.fillOutlines(buf.outlineXY);
   const sites = engine.chargeWorld();
   const cxy = buf.chargeXY;
   for (let i = 0, j = 0; i < sites.count; i++) {

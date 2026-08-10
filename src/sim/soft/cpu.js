@@ -381,6 +381,21 @@ export class SoftEngineCPU extends BaseEngine {
     return out;
   }
 
+  // Allocation-free outline fill — see BaseEngine.fillOutlines().
+  fillOutlines(out) {
+    const { L } = this;
+    let k = 0;
+    for (let mi = 0; mi < this.instances.length; mi++) {
+      const s = L.molStart[mi];
+      const nP = L.molPerim[mi];
+      for (let p = 0; p < nP; p++) {
+        out[k++] = L.x[s + p];
+        out[k++] = L.y[s + p];
+      }
+    }
+    return k;
+  }
+
   chargeWorld() {
     const { L } = this;
     this._chargedIdx.forEach((pi, k) => {

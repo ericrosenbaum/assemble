@@ -404,6 +404,11 @@ export class SoftEngineWebGL2 extends SoftEngineCPU {
     return super.outlines();
   }
 
+  fillOutlines(out) {
+    this._sync(false);
+    return super.fillOutlines(out);
+  }
+
   chargeWorld() {
     this._sync(false);
     return super.chargeWorld();

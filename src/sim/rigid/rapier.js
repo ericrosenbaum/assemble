@@ -256,6 +256,26 @@ export class RigidEngine extends BaseEngine {
     return out;
   }
 
+  // Allocation-free outline fill — see BaseEngine.fillOutlines().
+  fillOutlines(out) {
+    this._syncPose();
+    let k = 0;
+    for (let mi = 0; mi < this.bodies.length; mi++) {
+      const px = this._px[mi];
+      const py = this._py[mi];
+      const c = this._cos[mi];
+      const sn = this._sin[mi];
+      const verts = this.molecules[mi].spec.verts;
+      for (let v = 0; v < verts.length; v++) {
+        const x = verts[v][0];
+        const y = verts[v][1];
+        out[k++] = px + x * c - y * sn;
+        out[k++] = py + x * sn + y * c;
+      }
+    }
+    return k;
+  }
+
   chargeWorld() {
     this._syncPose();
     return this.sites;

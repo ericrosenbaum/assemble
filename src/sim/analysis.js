@@ -21,13 +21,45 @@ export function bondGraph(sites, { rBond = 0.8 } = {}) {
     adj.get(a).add(b);
     adj.get(b).add(a);
   };
+  // Bonds are contacts, so only sites within rBond can matter. Scanning all
+  // site pairs is O(S^2) — fine for a few hundred molecules, hopeless for tens
+  // of thousands, and this runs on a timer for the live HUD. Bucket the sites
+  // at rBond and check only the 3x3 neighbourhood.
+  const nc = Math.max(1, Math.floor(count / 2));
+  const heads = new Int32Array(nc).fill(-1);
+  const next = new Int32Array(count).fill(-1);
+  const gx = new Int32Array(count);
+  const gy = new Int32Array(count);
+  // Hashing the cell coordinates avoids allocating a grid over the bounding
+  // box, which would be mostly empty once structures spread out.
+  const hash = (a, b) => {
+    const h = (a * 73856093) ^ (b * 19349663);
+    return (h < 0 ? ~h : h) % nc;
+  };
   for (let i = 0; i < count; i++) {
-    for (let j = i + 1; j < count; j++) {
-      if (mol[i] === mol[j]) continue;
-      if (q[i] * q[j] >= 0) continue;
-      const dx = x[i] - x[j];
-      const dy = y[i] - y[j];
-      if (dx * dx + dy * dy < r2) addEdge(mol[i], mol[j]);
+    gx[i] = Math.floor(x[i] / rBond);
+    gy[i] = Math.floor(y[i] / rBond);
+    const c = hash(gx[i], gy[i]);
+    next[i] = heads[c];
+    heads[c] = i;
+  }
+
+  for (let i = 0; i < count; i++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let j = heads[hash(gx[i] + ox, gy[i] + oy)]; j !== -1; j = next[j]) {
+          // Each unordered pair is reached from both ends; take it once.
+          // The hash can collide, so re-check the true cell offsets rather
+          // than trusting bucket membership.
+          if (j <= i) continue;
+          if (gx[j] !== gx[i] + ox || gy[j] !== gy[i] + oy) continue;
+          if (mol[i] === mol[j]) continue;
+          if (q[i] * q[j] >= 0) continue;
+          const dx = x[i] - x[j];
+          const dy = y[i] - y[j];
+          if (dx * dx + dy * dy < r2) addEdge(mol[i], mol[j]);
+        }
+      }
     }
   }
   return { adj, nMol };
