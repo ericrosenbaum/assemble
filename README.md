@@ -204,12 +204,46 @@ each molecule a statistically identical neighbourhood — so the same schedule
 produces proportionally more structures in the same number of steps. Measured,
 not assumed.
 
-Two limits set the size. Rendering is the binding one: Canvas2D costs
-2–4 ms/frame at these counts (a 240–470 fps ceiling, measured in a real
-browser), but 3,000 molecules costs 69 ms/frame and drops to 14 fps. The other
-is legibility — a fixed canvas with a √N box means molecules shrink as the
-count grows, and past a few thousand they are specks. Both point at the same
-place, so the defaults sit there rather than at what the engine could survive.
+Rendering used to be the binding limit — Canvas2D cost 2–4 ms/frame at these
+counts and 69 ms at 3,000, which is where the defaults were originally sized
+to. The instanced renderer below removed that ceiling, so what now bounds the
+default is legibility: a fixed canvas with a √N box means molecules shrink as
+the count grows, and past a few thousand they are specks.
+
+### Instanced WebGL2 rendering
+
+Canvas2D rebuilt a path from every vertex of every molecule on every frame, so
+its cost scaled with total vertices and it — not the physics — capped the
+interactive molecule count. But a rigid molecule's geometry never changes in
+its own frame. It belongs on the GPU once, with only the pose travelling per
+frame.
+
+`src/render/gl.js` uploads each species' triangulated fill and outline loop as
+static buffers and draws all its molecules in **one instanced call**, with a
+per-instance `[x, y, cos, sin]`. Charge sites are a second instanced pass — one
+unit quad, shaded into a disc in the fragment shader. Draw calls per frame go
+from a path operation per vertex to two per species plus one, independent of
+molecule count. The worker now posts poses rather than outline vertices, which
+is three floats per molecule instead of two per vertex and shrinks the
+per-frame transfer about fivefold.
+
+Measured on identical scenes, drawing only (`?render=gl` vs `?render=2d`):
+
+| molecules | Canvas2D | instanced WebGL2 | |
+| --- | --- | --- | --- |
+| 320 | 2.29 ms/frame | **0.21 ms** | 11× |
+| 1,500 | 15.98 ms/frame | **0.39 ms** | 41× |
+| 3,000 | 62.22 ms/frame | **1.06 ms** | 59× |
+
+Those are on SwiftShader — a *software* rasteriser — so a real GPU has more
+headroom still. At 3,000 molecules the renderer now costs 1 ms against a
+simulation step budget of ~18 ms, which flips the constraint back onto physics
+where it belongs.
+
+Canvas2D is kept, not retired: it is the fallback where WebGL2 is unavailable,
+and the headless capture harness uses it deliberately because it draws the text
+HUD that the recorded GIFs carry, and capture is bound by simulation time
+anyway. `?render=gl|2d` forces either.
 
 The scale-up also corrected something the old default was too small to see.
 Wedge rings are supposed to close at 8. At 32 molecules a run produced one or

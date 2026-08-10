@@ -49,14 +49,16 @@ function buildSnapshotLayout() {
 
 function newBuffer(siteCount) {
   return {
-    outlineXY: new Float32Array(vertTotal * 2),
+    // Poses, not outline vertices: the renderer rebuilds geometry from the
+    // spec, so three floats per molecule replaces two per vertex.
+    poseXYA: new Float32Array(engine.instances.length * 3),
     chargeXY: new Float32Array(siteCount * 2),
   };
 }
 
 function fillSnapshot(buf) {
-  // Writes straight into the transferable — see BaseEngine.fillOutlines().
-  engine.fillOutlines(buf.outlineXY);
+  // Writes straight into the transferable — see BaseEngine.fillPoses().
+  engine.fillPoses(buf.poseXYA);
   const sites = engine.chargeWorld();
   const cxy = buf.chargeXY;
   for (let i = 0, j = 0; i < sites.count; i++) {
@@ -80,14 +82,14 @@ function post(force = false) {
   self.postMessage(
     {
       type: 'snapshot',
-      outlineXY: buf.outlineXY,
+      poseXYA: buf.poseXYA,
       chargeXY: buf.chargeXY,
       step: engine.stepCount,
       kT: engine.params.kT,
       stepsPerSec,
       stats: st,
     },
-    [buf.outlineXY.buffer, buf.chargeXY.buffer],
+    [buf.poseXYA.buffer, buf.chargeXY.buffer],
   );
 }
 
@@ -162,7 +164,7 @@ self.onmessage = async (ev) => {
       break;
     }
     case 'recycle':
-      freeBuffers.push({ outlineXY: msg.outlineXY, chargeXY: msg.chargeXY });
+      freeBuffers.push({ poseXYA: msg.poseXYA, chargeXY: msg.chargeXY });
       break;
     case 'run':
       if (!running) {

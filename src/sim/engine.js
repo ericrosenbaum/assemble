@@ -29,11 +29,62 @@ export const defaultParams = {
 };
 
 // Annealing schedule: hold hot, then exponential-ish cool to Tend.
+//
+// `mode` selects the protocol. The default 'anneal' is the classic hold-then-
+// cool and is what every preset used before the schedule search; the others
+// exist because "cool slowly" is a folk rule worth testing rather than
+// assuming (see tools/anneal_search.mjs):
+//
+//   anneal  hold at Tstart, then cool geometrically to Tend
+//   steady  hold one temperature forever
+//   cycle   oscillate between Thot and Tcold with period `periodSteps`,
+//           optionally drifting the mean downward via `coolSteps`
+//
+// Cycling is the interesting one: a bond that is wrong is weaker than a bond
+// that is right, so a hot phase should preferentially melt mistakes while
+// leaving correct structure intact — an anneal that gets repeated attempts
+// instead of one.
 export class TemperatureSchedule {
-  constructor({ Tstart = 3.0, Tend = 0.15, holdSteps = 600, coolSteps = 6000 } = {}) {
-    Object.assign(this, { Tstart, Tend, holdSteps, coolSteps });
+  constructor({
+    Tstart = 3.0,
+    Tend = 0.15,
+    holdSteps = 600,
+    coolSteps = 6000,
+    mode = 'anneal',
+    // cycle-only
+    Thot = null,
+    Tcold = null,
+    periodSteps = 10000,
+    duty = 0.5, // fraction of each period spent hot
+  } = {}) {
+    Object.assign(this, {
+      Tstart,
+      Tend,
+      holdSteps,
+      coolSteps,
+      mode,
+      Thot: Thot ?? Tstart,
+      Tcold: Tcold ?? Tend,
+      periodSteps,
+      duty,
+    });
   }
+
   at(step) {
+    if (this.mode === 'steady') return this.Tstart;
+
+    if (this.mode === 'cycle') {
+      if (step <= this.holdSteps) return this.Thot;
+      const s = step - this.holdSteps;
+      const phase = (s % this.periodSteps) / this.periodSteps;
+      const hot = phase < this.duty;
+      // Optional downward drift of both rails, so a cycling run can still end
+      // cold enough to lock structures in.
+      const u = this.coolSteps > 0 ? Math.min(1, s / this.coolSteps) : 0;
+      const scale = Math.pow(this.Tend / this.Thot, u);
+      return (hot ? this.Thot : this.Tcold) * (this.coolSteps > 0 ? scale : 1);
+    }
+
     if (step <= this.holdSteps) return this.Tstart;
     const u = Math.min(1, (step - this.holdSteps) / this.coolSteps);
     // exponential interpolation reads as "gradual cooling" visually
@@ -73,6 +124,22 @@ export class BaseEngine {
         out[k++] = x;
         out[k++] = y;
       }
+    }
+    return k;
+  }
+
+  // Write [x, y, angle] per molecule into a flat preallocated buffer.
+  //
+  // A rigid molecule's on-screen geometry is fully determined by its pose, so
+  // this is all the instanced renderer needs — three floats per molecule
+  // instead of two per vertex. It is also what the worker posts, which shrinks
+  // the per-frame transfer by roughly 5x.
+  fillPoses(out) {
+    let k = 0;
+    for (const p of this.poses()) {
+      out[k++] = p.x;
+      out[k++] = p.y;
+      out[k++] = p.angle;
     }
     return k;
   }

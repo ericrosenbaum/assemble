@@ -6,7 +6,7 @@ import { buildScenario, SCENARIOS } from './presets.js';
 import { RigidEngine } from './sim/rigid/rapier.js';
 import { createSoftEngine, detectBackends } from './sim/soft/index.js';
 import { WorkerSim } from './sim/simclient.js';
-import { Renderer } from './render/draw.js';
+import { createRenderer } from './render/index.js';
 import { stats } from './sim/analysis.js';
 
 const qs = new URLSearchParams(location.search);
@@ -14,6 +14,10 @@ const headless = qs.get('headless') === '1';
 // The headless capture harness drives stepping synchronously and needs
 // deterministic control of when steps happen, so it always runs in-thread.
 const useWorker = !headless && qs.get('worker') !== '0' && typeof Worker !== 'undefined';
+// Renderer choice: WebGL2 instanced draws for the app, Canvas2D for headless
+// capture (it draws the text HUD the recorded GIFs carry). ?render=gl|2d forces
+// either, which is how the renderer benchmark compares them on equal terms.
+const renderPrefer = qs.get('render') ?? (headless ? '2d' : 'gl');
 
 const el = (id) => document.getElementById(id);
 const canvas = el('view');
@@ -59,7 +63,7 @@ async function makeEngine() {
       updateStats();
     });
     state.engine = sim;
-    state.renderer = new Renderer(canvas, sc.box);
+    state.renderer = createRenderer(canvas, sc.box, { prefer: renderPrefer });
     el('count').value = String(sim.instances.length);
     draw();
     updateStats();
@@ -79,7 +83,7 @@ async function makeEngine() {
     state.engineKind === 'rigid' ? new RigidEngine(opts) : await createSoftEngine(opts, state.backend);
   await engine.ready;
   state.engine = engine;
-  state.renderer = new Renderer(canvas, sc.box);
+  state.renderer = createRenderer(canvas, sc.box, { prefer: renderPrefer });
   el('count').value = String(sc.instances.length);
   draw();
   updateStats();

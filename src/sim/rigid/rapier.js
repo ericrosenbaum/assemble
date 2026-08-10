@@ -256,6 +256,18 @@ export class RigidEngine extends BaseEngine {
     return out;
   }
 
+  // Allocation-free pose fill — see BaseEngine.fillPoses().
+  fillPoses(out) {
+    this._syncPose();
+    let k = 0;
+    for (let mi = 0; mi < this.bodies.length; mi++) {
+      out[k++] = this._px[mi];
+      out[k++] = this._py[mi];
+      out[k++] = Math.atan2(this._sin[mi], this._cos[mi]);
+    }
+    return k;
+  }
+
   // Allocation-free outline fill — see BaseEngine.fillOutlines().
   fillOutlines(out) {
     this._syncPose();
