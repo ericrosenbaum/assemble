@@ -15,7 +15,8 @@ assembling from tubulin.
 
 ![two rings self-assembling](results/wedge8_two_rings_rigid.gif)
 
-*40 wedge monomers annealing into two closed 8-rings (rigid-body engine).*
+*320 wedge monomers annealing into ten closed rings (rigid-body engine),
+318 of them bonded into some structure by the end.*
 
 ## Running it
 
@@ -178,6 +179,46 @@ bottleneck**. Rapier is a tenth of the step. Anything faster has to attack our
 own force kernel — parallelising it across workers, or moving the rigid engine
 onto the GPU the way the soft engine already is.
 
+### Spending it: the presets are now ten times bigger
+
+Defaults were sized for the old engine — 32 molecules in a 64-unit box. Every
+preset now runs **10× the molecules**, with the *packing fraction held fixed*
+so the box grows with it (√10 ≈ 3.2× per side) and the physics is untouched.
+Density matters as much as the charge constants, so scaling count without
+scaling the box would have silently retuned every scenario. The four presets
+that hard-coded a box now declare their measured packing instead, so they
+scale with the rest.
+
+What that buys, at identical parameters and the same 130k-step schedule:
+
+| preset | was | now |
+| --- | --- | --- |
+| `wedge-8` | 32 molecules, 1 closed ring | **320**, 10 closed rings, 318 bonded |
+| `square-2x2` | 32 molecules, 6 blocks | **320**, 46 blocks, 317 bonded |
+| `hex-ring6` | 30 molecules, 2 rings | **300**, 9 rings, 291 bonded |
+
+The schedules did *not* need rescaling, which is worth stating because it was a
+real question: annealing schedules are written in steps and were tuned at 32
+molecules. Assembly kinetics are local — a bigger box at the same density gives
+each molecule a statistically identical neighbourhood — so the same schedule
+produces proportionally more structures in the same number of steps. Measured,
+not assumed.
+
+Two limits set the size. Rendering is the binding one: Canvas2D costs
+2–4 ms/frame at these counts (a 240–470 fps ceiling, measured in a real
+browser), but 3,000 molecules costs 69 ms/frame and drops to 14 fps. The other
+is legibility — a fixed canvas with a √N box means molecules shrink as the
+count grows, and past a few thousand they are specks. Both point at the same
+place, so the defaults sit there rather than at what the engine could survive.
+
+The scale-up also corrected something the old default was too small to see.
+Wedge rings are supposed to close at 8. At 32 molecules a run produced one or
+two rings and they looked like clean 8s; at 320 the size histogram over three
+seeds is 7×9, 8×14, 9×6, 10×6 — **only 40% are true 8-rings**. Re-measuring the
+old default gives 3 of 5, which is the same story with error bars wide enough
+to hide it. The mis-sized rings were always forming; 32 molecules just never
+sampled enough of them to notice.
+
 In the app the gain is larger still, because the old ceiling was the render
 loop rather than the engine: **1,200 → ~4,700 steps/s** at 32 molecules.
 
@@ -279,14 +320,14 @@ matched the prediction in each case:
 
 | preset | shape | k | predicts | observed |
 | --- | --- | --- | --- | --- |
-| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | `[4,4,4,4,4,4]` |
-| `hex-trimer` | hexagon | 1 | 3-ring | `[3,3,3,3]` |
-| `hex-ring6` | hexagon | 2 | 6-ring | `[6,6]` |
-| `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | no rings, chains to 9 |
-| `tri-rosette` | triangle | 1 | 6-ring rosette | `[6,6]` |
-| `pent-ring10` | pentagon | 2 | 10-ring | `[10]` |
-| `square-sheet` | square | — | lattice (all faces charged) | one 36-molecule sheet |
-| `hex-sheet` | hexagon | — | honeycomb sheet | one 30-molecule sheet |
+| `square-2x2` | square | 1 | 4-ring (2×2 pinwheel) | 46 rings: 33 fours, 13 fives |
+| `hex-trimer` | hexagon | 1 | 3-ring | 43 trimers, every one exactly 3 |
+| `hex-ring6` | hexagon | 2 | 6-ring | 9 rings: 5 sixes, 4 sevens |
+| `hex-fiber` | hexagon | 3 | straight chain (`rot = 0`) | no rings, chains to 12 |
+| `tri-rosette` | triangle | 1 | 6-ring rosette | 27 rings: 13 sixes, 14 sevens |
+| `pent-ring10` | pentagon | 2 | 10-ring | 5 rings: 3 tens, 2 nines |
+| `square-sheet` | square | — | lattice (all faces charged) | one 360-molecule sheet, all bonded |
+| `hex-sheet` | hexagon | — | honeycomb sheet | one 293-molecule sheet |
 
 ![squares forming 2x2 blocks](results/square-2x2.gif)
 ![hexagons forming 6-rings](results/hex-ring6.gif)
@@ -332,21 +373,26 @@ weak enough to break in the selective window while correct bonds hold.
 
 | preset | pair | turns | predicts | observed |
 | --- | --- | --- | --- | --- |
-| `tri-hex-4ring` | triangle + hexagon (k=1) | 60° + 120° | 4-ring | `[4,3]` |
-| `square-hex-8ring` | square + hexagon (k=3) | 90° + 0° | 8-ring | 8-long chains, no closure |
-| `tri-hex-12ring` | triangle + hexagon (k=3) | 60° + 0° | 12-ring | chains, no closure |
-| `salt-lattice` | square + square, all faces | — | checkerboard | 35/36 in one crystal |
+| `tri-hex-4ring` | triangle + hexagon (k=1) | 60° + 120° | 4-ring | 33 rings, 17 of them true 4s |
+| `square-hex-8ring` | square + hexagon (k=3) | 90° + 0° | 8-ring | chains to 13, only 4 stray closures |
+| `tri-hex-12ring` | triangle + hexagon (k=3) | 60° + 0° | 12-ring | chains to 15, one stray 6-ring |
+| `salt-lattice` | square + square, all faces | — | checkerboard | 353/360 in one crystal |
 
 The two larger ring targets are honest partial results. Everything except the
-last bond is right: chains are strictly alternating, curl consistently in one
-direction, and reach exactly the predicted length — `square-hex-8ring` settles
-on clusters of precisely 8. What does not happen is **closure**, and that is
-kinetics rather than geometry. A chain has to find its own tail before growing
-past the target, and the bigger the ring the less likely that is: at the
-density that produces 12-long chains they overshoot to 17, while diluting
-enough to stop the overshoot leaves them at 8. Small targets are unaffected,
-which is why `tri-hex-4ring` closes and the sheets — which never need to
-close anything — work outright.
+last bond is right: chains are strictly alternating and curl consistently in
+one direction. What does not happen is **closure**, and that is kinetics rather
+than geometry. A chain has to find its own tail before growing past the target,
+and the bigger the ring the less likely that is — at ten times the old count
+the chains simply run longer (13 and 15 against targets of 8 and 12) instead of
+closing. Small targets are unaffected, which is why `tri-hex-4ring` closes and
+the sheets — which never need to close anything — work outright.
+
+The larger counts sharpen that argument into a clean gradient, because they
+finally sample enough closures to measure purity rather than anecdote:
+`hex-trimer` (target 3) produces 43 rings and **every single one is exactly 3**;
+`tri-hex-4ring` (target 4) gets 17 of 33 right; `wedge-8` (target 8) gets 40%;
+and the 12-ring gets one stray closure in a whole box. The number of correct
+consecutive encounters a ring needs is exactly what it costs you.
 
 The `k=3` hexagon contributes no turn at all, so it acts as a straight spacer:
 the squares or triangles supply every corner and the hexagons form the edges
@@ -376,25 +422,30 @@ finite **star**. Two things make it easy:
 
 | preset | hub | arm | observed |
 | --- | --- | --- | --- |
-| `star-3` | triangle | rod, `−` one end | `[3,3,3,2]` |
-| `star-4` | square | rod | `[4,3,3,2,2,2]` |
-| `star-6` | hexagon | rod | `[6,6,4,3,2,2]` |
-| `strut-net` | triangle | strut, `−` **both** ends | branched network, largest 14 |
+| `star-3` | triangle | rod, `−` one end | 74 stars, 98/100 hubs occupied |
+| `star-4` | square | rod | 69 stars, 77/80 hubs occupied |
+| `star-6` | hexagon | rod | 55 stars, 60/60 hubs occupied |
+| `strut-net` | triangle | strut, `−` **both** ends | branched network, largest 121 |
 
 ![3-armed stars](results/star-3.gif)
 ![6-armed asterisks](results/star-6.gif)
 
 *Triangles gathering three arms each; hexagons gathering six.*
 
-Those censuses are arm counts per star, so `[3,3,3,2]` is three complete
-3-armed stars and one still an arm short. Ring detection can't see stars at
-all (it wants every member at degree 2), so `countStars` in
-`src/sim/analysis.js` reports them instead, and the HUD shows whichever of the
-two a scenario actually builds.
+A star's census is its arm count, and at these sizes nearly every hub finds
+work: 98 of 100 triangle hubs in `star-3`, and all 60 hexagon hubs in
+`star-6`. What limits completeness is arms rather than hubs — `star-6` binds
+193 of 400 rods, so most hexagons hold three to five arms and only one reaches
+a full six. Ring detection can't see stars at all (it wants every member at
+degree 2), so `countStars` in `src/sim/analysis.js` reports them instead, and
+the HUD shows whichever of the two a scenario actually builds.
 
 Making the rod double-ended (`strut-net`) changes the outcome completely: the
 arm becomes divalent, bridging hubs rather than capping one, and the finite
-stars give way to an extended branched network.
+stars give way to an extended branched network. At the larger default this is
+unmistakable — a single connected network of **121 molecules**, where the
+capping rod tops out at a 7-molecule star no matter how many molecules are in
+the box. Valency, not scale, sets the size of what you can build.
 
 The `*-sheet` presets charge every face instead of two. Opposite faces must
 carry opposite signs, since edge *i* meets edge *i+n/2* in an aligned tiling —
@@ -430,9 +481,9 @@ including ones drawn in the designer.
 
 | preset | contents | observed |
 | --- | --- | --- |
-| `dock-lock-key` | receptor + matching key | 10/12 receptors docked, every cluster a pair |
-| `dock-selectivity` | receptor + matching key + wider decoy | matching **8/14**, decoy **0/14** |
-| `dock-chain` | monomer with a notch one side, tip the other | dimers and short chains |
+| `dock-lock-key` | receptor + matching key | 97/120 receptors docked, every cluster a pair |
+| `dock-selectivity` | receptor + matching key + wider decoy | matching **76/140**, decoy **1/140** |
+| `dock-chain` | monomer with a notch one side, tip the other | 116/240 bonded, chains up to 4 |
 
 The `dock-chain` monomer cuts its notch 0.3 units deeper and wider than the tip
 that fills it. That clearance is not cosmetic — see *Why docked chains used to
@@ -510,11 +561,13 @@ it: over ten seeds of `dock-chain`, peak energy went from 6.6× to 1.6× with th
 non-bursting seeds unmoved (1.6/1.5/1.4/1.3 either way).
 
 ![docked chains before the fix](results/dock-chain-burst-before.gif)
-![docked chains after the fix](results/dock-chain.gif)
+![docked chains after the fix](results/dock-chain-burst-after.gif)
 
 *Same seed, same 40,000 steps. Before: pairs form, burst, re-form, ending with
 4 monomers bonded and nothing longer than a dimer. After: 9 bonded and a
-3-chain that holds.*
+3-chain that holds. This pair is kept at the 24-monomer scale it was measured
+at — the preset's default is now ten times that, and a controlled comparison
+has to hold everything but the fix constant.*
 
 The real bug, though, was that an unstable preset looked fine until a human
 watched it. `test/stability.test.mjs` now runs **every** scenario and fails if

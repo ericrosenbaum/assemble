@@ -115,9 +115,8 @@ export const SCENARIOS = {
     label: '8-wedge rings (microtubule)',
     config: {
       spec: () => wedge({ nRing: 8, rInner: 4, rOuter: 9 }),
-      count: 32,
-      boxW: 64,
-      boxH: 64,
+      count: 320,
+      packing: 0.18,
       seed: 7,
       params: { ...TUNED },
       schedule: { ...ANNEAL },
@@ -127,9 +126,8 @@ export const SCENARIOS = {
     label: '8-wedge rings (2005 article layout)',
     config: {
       spec: () => wedge({ nRing: 8, rInner: 4, rOuter: 9, chargeT: null, chargeQ: null }),
-      count: 32,
-      boxW: 64,
-      boxH: 64,
+      count: 320,
+      packing: 0.18,
       seed: 7,
       params: { ...TUNED },
       schedule: { ...ANNEAL },
@@ -139,9 +137,8 @@ export const SCENARIOS = {
     label: '6-wedge rings',
     config: {
       spec: () => wedge({ nRing: 6, rInner: 3.5, rOuter: 8.5 }),
-      count: 24,
-      boxW: 58,
-      boxH: 58,
+      count: 240,
+      packing: 0.185,
       seed: 11,
       params: { ...TUNED },
       schedule: { ...ANNEAL },
@@ -151,9 +148,8 @@ export const SCENARIOS = {
     label: '12-wedge rings',
     config: {
       spec: () => wedge({ nRing: 12, rInner: 6, rOuter: 11 }),
-      count: 36,
-      boxW: 86,
-      boxH: 86,
+      count: 360,
+      packing: 0.103,
       seed: 3,
       params: { ...TUNED },
       schedule: { ...ANNEAL, Tstart: 1.6 },
@@ -170,7 +166,7 @@ export const SCENARIOS = {
     label: 'squares → 2×2 blocks',
     config: {
       spec: () => facePair({ n: 4, k: 1, name: 'square-2x2', color: '#7fb069' }),
-      count: 32,
+      count: 320,
       packing: 0.17,
       seed: 5,
       params: { ...TUNED },
@@ -181,7 +177,7 @@ export const SCENARIOS = {
     label: 'squares → lattice sheet',
     config: {
       spec: () => tiler({ n: 4, name: 'square-sheet', color: '#5fb0a5' }),
-      count: 36,
+      count: 360,
       packing: 0.40,
       seed: 8,
       params: { ...TUNED },
@@ -192,7 +188,7 @@ export const SCENARIOS = {
     label: 'hexagons → trimers (k=1)',
     config: {
       spec: () => facePair({ n: 6, k: 1, name: 'hex-trimer', color: '#6c91bf' }),
-      count: 30,
+      count: 300,
       packing: 0.22,
       seed: 4,
       params: { ...TUNED },
@@ -203,7 +199,7 @@ export const SCENARIOS = {
     label: 'hexagons → 6-rings (k=2)',
     config: {
       spec: () => facePair({ n: 6, k: 2, name: 'hex-ring6', color: '#8a7fb0' }),
-      count: 30,
+      count: 300,
       packing: 0.25,
       seed: 6,
       params: { ...TUNED },
@@ -214,7 +210,7 @@ export const SCENARIOS = {
     label: 'hexagons → straight fibres (k=3)',
     config: {
       spec: () => facePair({ n: 6, k: 3, name: 'hex-fiber', color: '#c76f8a' }),
-      count: 30,
+      count: 300,
       packing: 0.25,
       seed: 9,
       params: { ...TUNED },
@@ -225,7 +221,7 @@ export const SCENARIOS = {
     label: 'hexagons → honeycomb sheet',
     config: {
       spec: () => tiler({ n: 6, name: 'hex-sheet', color: '#e8b04b' }),
-      count: 30,
+      count: 300,
       packing: 0.4,
       seed: 2,
       params: { ...TUNED },
@@ -236,7 +232,7 @@ export const SCENARIOS = {
     label: 'triangles → 6-rosettes',
     config: {
       spec: () => facePair({ n: 3, k: 1, name: 'tri-rosette', color: '#d98b4a' }),
-      count: 36,
+      count: 360,
       packing: 0.15,
       seed: 7,
       params: { ...TUNED },
@@ -247,7 +243,7 @@ export const SCENARIOS = {
     label: 'pentagons → 10-rings',
     config: {
       spec: () => facePair({ n: 5, k: 2, name: 'pent-ring10', color: '#5aa9a0' }),
-      count: 30,
+      count: 300,
       packing: 0.25,
       seed: 3,
       params: { ...TUNED },
@@ -269,12 +265,12 @@ export const SCENARIOS = {
         {
           spec: () =>
             speciesA({ n: 3, k: 1, name: 'triangle A', color: '#e8b04b' }),
-          count: 20,
+          count: 200,
         },
         {
           spec: () =>
             speciesB({ n: 6, k: 1, name: 'hexagon B', color: '#6c91bf' }),
-          count: 20,
+          count: 200,
         },
       ],
       packing: 0.2,
@@ -290,12 +286,12 @@ export const SCENARIOS = {
         {
           spec: () =>
             speciesA({ n: 4, k: 1, name: 'square A', color: '#7fb069' }),
-          count: 16,
+          count: 160,
         },
         {
           spec: () =>
             speciesB({ n: 6, k: 3, name: 'hexagon B', color: '#c76f8a' }),
-          count: 16,
+          count: 160,
         },
       ],
       packing: 0.2,
@@ -311,12 +307,12 @@ export const SCENARIOS = {
         {
           spec: () =>
             speciesA({ n: 3, k: 1, name: 'triangle A', color: '#d98b4a' }),
-          count: 18,
+          count: 180,
         },
         {
           spec: () =>
             speciesB({ n: 6, k: 3, name: 'hexagon B', color: '#8a7fb0' }),
-          count: 18,
+          count: 180,
         },
       ],
       packing: 0.2,
@@ -341,8 +337,8 @@ export const SCENARIOS = {
     label: 'triangles + rods → 3-armed stars',
     config: {
       species: [
-        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#e8b04b' }), count: 10 },
-        { spec: () => rod({ name: 'arm', color: '#6c91bf' }), count: 34 },
+        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#e8b04b' }), count: 100 },
+        { spec: () => rod({ name: 'arm', color: '#6c91bf' }), count: 340 },
       ],
       packing: 0.22,
       seed: 21,
@@ -354,8 +350,8 @@ export const SCENARIOS = {
     label: 'squares + rods → 4-armed crosses',
     config: {
       species: [
-        { spec: () => hub({ n: 4, name: 'square hub', color: '#7fb069' }), count: 8 },
-        { spec: () => rod({ name: 'arm', color: '#c76f8a' }), count: 36 },
+        { spec: () => hub({ n: 4, name: 'square hub', color: '#7fb069' }), count: 80 },
+        { spec: () => rod({ name: 'arm', color: '#c76f8a' }), count: 360 },
       ],
       packing: 0.22,
       seed: 22,
@@ -367,8 +363,8 @@ export const SCENARIOS = {
     label: 'hexagons + rods → 6-armed asterisks',
     config: {
       species: [
-        { spec: () => hub({ n: 6, name: 'hexagon hub', color: '#8a7fb0' }), count: 6 },
-        { spec: () => rod({ name: 'arm', color: '#d98b4a' }), count: 40 },
+        { spec: () => hub({ n: 6, name: 'hexagon hub', color: '#8a7fb0' }), count: 60 },
+        { spec: () => rod({ name: 'arm', color: '#d98b4a' }), count: 400 },
       ],
       packing: 0.22,
       seed: 23,
@@ -380,7 +376,7 @@ export const SCENARIOS = {
     label: 'triangles + double-ended struts → network',
     config: {
       species: [
-        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#5fb0a5' }), count: 14 },
+        { spec: () => hub({ n: 3, name: 'triangle hub', color: '#5fb0a5' }), count: 140 },
         // 4.6 wide rather than the hub's 5, for clearance. At equal width the
         // struts meet exactly at the hub's vertices, and a strut bonded at
         // both ends is pinned in the network and cannot relieve that
@@ -391,7 +387,7 @@ export const SCENARIOS = {
         {
           spec: () =>
             rod({ bothEnds: true, length: 12, width: 4.6, name: 'strut', color: '#e8b04b' }),
-          count: 21,
+          count: 210,
         },
       ],
       packing: 0.22,
@@ -412,8 +408,8 @@ export const SCENARIOS = {
     label: 'receptor + key → docked complexes',
     config: {
       species: [
-        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 12 },
-        { spec: () => wedgeKey({ name: 'key', color: '#e8b04b' }), count: 16 },
+        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 120 },
+        { spec: () => wedgeKey({ name: 'key', color: '#e8b04b' }), count: 160 },
       ],
       packing: 0.2,
       seed: 31,
@@ -440,12 +436,12 @@ export const SCENARIOS = {
     label: 'right key vs wrong key',
     config: {
       species: [
-        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 12 },
-        { spec: () => wedgeKey({ name: 'matching key', color: '#7fb069' }), count: 14 },
+        { spec: () => notchedBlock({ name: 'receptor', color: '#6c91bf' }), count: 120 },
+        { spec: () => wedgeKey({ name: 'matching key', color: '#7fb069' }), count: 140 },
         {
           spec: () =>
             wedgeKey({ apexAngle: Math.PI / 2, name: 'decoy key', color: '#c76f8a' }),
-          count: 14,
+          count: 140,
         },
       ],
       packing: 0.2,
@@ -458,7 +454,7 @@ export const SCENARIOS = {
     label: 'notch + tip monomer → docked chains',
     config: {
       spec: () => dockingMonomer({ name: 'docking monomer', color: '#8a7fb0' }),
-      count: 24,
+      count: 240,
       packing: 0.2,
       seed: 33,
       params: { ...TUNED },
@@ -473,12 +469,12 @@ export const SCENARIOS = {
         {
           spec: () =>
             tiler({ n: 4, uniformSign: 1, chargeT: POLAR_T, name: 'square +', color: '#e8b04b' }),
-          count: 18,
+          count: 180,
         },
         {
           spec: () =>
             tiler({ n: 4, uniformSign: -1, chargeT: POLAR_T, name: 'square −', color: '#5fb0a5' }),
-          count: 18,
+          count: 180,
         },
       ],
       packing: 0.4,
