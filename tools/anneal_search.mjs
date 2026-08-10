@@ -42,7 +42,11 @@ function scaled(o) {
   const f = steps / 130000;
   const out = { ...o };
   for (const k of ['holdSteps', 'coolSteps', 'periodSteps']) {
-    if (out[k] != null) out[k] = Math.max(1, Math.round(out[k] * f));
+    // Zero is meaningful — `coolSteps: 0` is how a cycle says "no downward
+    // drift". Clamping it to 1 made the drift term complete on the first step
+    // and multiplied both rails by Tend/Thot, so every cycling variant silently
+    // ran at T ~ 0.1 and froze. Only round a positive value up to 1.
+    if (out[k]) out[k] = Math.max(1, Math.round(out[k] * f));
   }
   return out;
 }
@@ -51,44 +55,33 @@ function defaultVariants() {
   const v = [];
   v.push({ name: 'baseline anneal', cfg: { ...BASE } });
 
-  // Never cool at all. A first pass found yield climbing monotonically with
-  // temperature all the way to the preset's hot rail (1.7), so this sweep
-  // deliberately continues past it to find where it turns over.
-  for (const T of [1.2, 1.4, 1.6, 1.8, 2.0, 2.3, 2.7]) {
+  // Never cool at all. Earlier passes found yield climbing with temperature
+  // well past the preset's hot rail (1.7), so this continues up to find where
+  // it turns over.
+  for (const T of [1.7, 2.0, 2.3, 2.7, 3.2]) {
     v.push({ name: `steady T=${T}`, cfg: { mode: 'steady', Tstart: T } });
   }
 
-  // hold-then-cool with different hold lengths (is the long hot hold useful?)
-  for (const hold of [0, 70000, 105000, 122000]) {
+  // Is the cooling phase worth anything, and how long should the hot hold be?
+  for (const hold of [105000]) {
     v.push({ name: `anneal hold=${hold}`, cfg: { ...BASE, holdSteps: hold, coolSteps: 130000 - hold } });
   }
 
-  // Cycling that never goes cold. The first pass found that plunging to 0.3 or
-  // 0.9 destroyed ring yield outright — every such variant finished with zero
-  // correct rings, because the cold phase freezes in disorder faster than the
-  // hot phase can melt it out. These oscillate inside the productive band.
-  for (const period of [6000, 20000]) {
-    for (const [hot, cold] of [
-      [2.0, 1.4],
-      [2.3, 1.5],
-      [2.6, 1.6],
-    ]) {
-      v.push({
-        name: `cycle ${hot}/${cold} period=${period}`,
-        cfg: { mode: 'cycle', Thot: hot, Tcold: cold, periodSteps: period, holdSteps: 6000, coolSteps: 0 },
-      });
-    }
+  // Cycling within the productive band, plus one cold-plunge control.
+  for (const [hot, cold, period] of [
+    [2.3, 1.5, 6000],
+    [2.3, 1.5, 20000],
+    [2.8, 1.6, 20000],
+    [2.3, 0.6, 20000],
+  ]) {
+    v.push({
+      name: `cycle ${hot}/${cold} period=${period}`,
+      cfg: { mode: 'cycle', Thot: hot, Tcold: cold, periodSteps: period, holdSteps: 6000, coolSteps: 0 },
+    });
   }
 
-  // Control: the cold-plunge kind, so the warm-band cycles have something
-  // other than the steady runs to beat.
-  v.push({
-    name: 'cycle 1.7/0.6 period=20000',
-    cfg: { mode: 'cycle', Thot: 1.7, Tcold: 0.6, periodSteps: 20000, holdSteps: 6000, coolSteps: 0 },
-  });
-
   // A slow ramp that ends warm rather than cold.
-  v.push({ name: 'ramp 2.4->1.6', cfg: { Tstart: 2.4, Tend: 1.6, holdSteps: 10000, coolSteps: 120000 } });
+  v.push({ name: 'ramp 2.7->1.7', cfg: { Tstart: 2.7, Tend: 1.7, holdSteps: 10000, coolSteps: 120000 } });
   return v;
 }
 
