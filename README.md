@@ -120,6 +120,9 @@ Measured with `npm run bench` (Node 22, 4-core container):
 | soft  | 32  | 525 steps/s   | 832 steps/s   | 1.6× |
 | soft  | 64  | 183 steps/s   | 397 steps/s   | 2.2× |
 
+(Those are the gains from the optimisation pass. The bigger structural change —
+removing the quadratic terms so the whole thing scales linearly — is next.)
+
 ### Scaling to tens of thousands of molecules
 
 The optimisations above cut the *constant*, but three things were still
