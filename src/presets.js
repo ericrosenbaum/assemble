@@ -96,12 +96,34 @@ const TUNED = {
   friction: 0.1,
   restitution: 0.05,
 };
-const ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 25000, coolSteps: 25000 };
+// Hold hot for most of the run, then quench sharply — rather than the classic
+// "cool slowly from hot", which these presets inherited by convention and which
+// a search (tools/anneal_search.mjs) found to be close to the worst option
+// available.
+//
+// The mechanism is that error correction costs thermal energy. A correct
+// full-face bond is ~42 energy units and a misregistered one ~12, so at kT=2.7
+// they are ~15 kT and ~4.4 kT: wrong bonds fall apart while right ones hold.
+// Cool to kT=0.3 and the wrong bond becomes ~40 kT — permanent. The cooling
+// phase does not refine anything, it just switches off the process that was
+// fixing mistakes, and it does so while plenty of mistakes remain.
+//
+// Measured on wedge-8 over 10-12 seeds at 320 molecules, correct 8-rings
+// after an identical final quench:
+//
+//   hold 1.7 then cool (what shipped)  4.3 rings, 34% of rings correct
+//   steady 2.7, never cool             8.0 rings, 45%
+//   hold 2.7 then quench (this)        7.8 rings, 49%
+//
+// The last wins on purity and still ends cold, so structures freeze for
+// display. Warm cycling (2.8/1.6) also beats the old schedule at 7.6/51% —
+// the user's hypothesis was right — but does not beat a steady hot hold.
+const ANNEAL = { Tstart: 2.7, Tend: 0.3, holdSteps: 42000, coolSteps: 8000 };
 // Bigger target rings need a longer search: every molecule carries just two
 // binding faces, so a 6- or 10-ring only closes after that many correct
 // encounters in a row, and the hold is where wrong bonds get a chance to
 // break. Small targets (2x2 blocks, trimers) close fine on the short anneal.
-const LONG_ANNEAL = { Tstart: 1.7, Tend: 0.3, holdSteps: 70000, coolSteps: 35000 };
+const LONG_ANNEAL = { Tstart: 2.7, Tend: 0.3, holdSteps: 110000, coolSteps: 20000 };
 // The soft engine binds through sticky sites that WCA shells keep ~1 unit
 // apart, so it needs a stronger charge constant and a smaller particle
 // diameter to reach the same binding-energy/kT ratios as the rigid engine.
