@@ -288,10 +288,12 @@ That also explains the dip at 4.0–5.5, which is otherwise baffling: it is the
 valley between the two regimes, hot enough to disrupt assembly and not hot
 enough to purify.
 
-Spiking works for the same reason and in proportion to how much time it spends
-at or above the window — spike height 6 → 9 → 14 gives 6.8 → 8.2 → 10.7 rings,
-and dose 8% → 15% gives 7.5 → 8.2. A steady hold simply spends *all* its time
-there. It is also the safer choice numerically: peak kinetic energy stays at
+Spiking above a cooler base works for the same reason, and in proportion to how
+much time it spends at or above the window. Both axes are monotonic: raising the
+spike height 6 → 9 → 14 gives 6.8 → 8.2 → 10.7 rings, and raising the dose at a
+fixed height of 9 from 8% → 15% → 30% of each cycle gives 7.5 → 8.2 → 10.3. A
+steady hold is the limit of that series — it spends *all* its time there, and
+duly scores highest. It is also the safer choice numerically: peak kinetic energy stays at
 0.6× equilibrium at a steady 7.5, against 1.9× while spiking to 14, where the
 explicit integrator starts to strain against `dt`.
 
