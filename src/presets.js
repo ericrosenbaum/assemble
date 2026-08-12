@@ -110,29 +110,41 @@ const TUNED = {
 // a search (tools/anneal_search.mjs) found to be close to the worst option
 // available.
 //
-// The mechanism is that error correction costs thermal energy. A correct
-// full-face bond is ~42 energy units and a misregistered one ~12, so at kT=2.7
-// they are ~15 kT and ~4.4 kT: wrong bonds fall apart while right ones hold.
-// Cool to kT=0.3 and the wrong bond becomes ~40 kT — permanent. The cooling
-// phase does not refine anything, it just switches off the process that was
-// fixing mistakes, and it does so while plenty of mistakes remain.
+// Two things are going on, and both argue against cooling.
 //
-// Measured on wedge-8 over 10-12 seeds at 320 molecules, correct 8-rings
-// after an identical final quench:
+// Error correction costs thermal energy. Cool to kT = 0.3 and a misregistered
+// bond is ~40 kT — permanent. The cooling phase does not refine anything, it
+// switches off the process that was fixing mistakes, and does so while plenty
+// of mistakes remain. That alone is worth roughly 2x.
 //
-//   hold 1.7 then cool (what shipped)  4.3 rings, 34% of rings correct
-//   steady 2.7, never cool             8.0 rings, 45%
-//   hold 2.7 then quench (this)        7.8 rings, 49%
+// The rest comes from holding much hotter than a bond-level argument suggests,
+// because what matters is *cluster* stability. At kT = 7.5 a single correct
+// full-face bond (~42 energy units) is only ~5.6 kT, so a half-finished cluster
+// hanging off one bond comes apart readily. A closed 8-ring cannot leave by one
+// bond: it has to break two at once, ~11 kT, which is rare. So the bath
+// dissolves partial and misassembled material while finished rings sit there
+// and keep collecting monomers. Below ~7 the junk survives too; above ~11 the
+// two-bond barrier starts falling as well and the rings go with it.
 //
-// The last wins on purity and still ends cold, so structures freeze for
-// display. Warm cycling (2.8/1.6) also beats the old schedule at 7.6/51% —
-// the user's hypothesis was right — but does not beat a steady hot hold.
-const ANNEAL = { Tstart: 2.7, Tend: 0.3, holdSteps: 42000, coolSteps: 8000 };
+// Measured on wedge-8 over 12 seeds at 320 molecules, correct 8-rings after an
+// identical final quench (tools/anneal_search.mjs):
+//
+//   hold 1.7 then cool (the original)   4.3 rings, 34% of rings correct
+//   hold 2.7 then quench                7.8 rings, 49%
+//   steady 6.5                          8.4 rings, 53%
+//   hold 7.5 then quench (this)        10.8 rings, 69%
+//   steady 7.5 / 9.0                   11.4 / 11.2 rings, 73% / 78%
+//
+// 7.5 and 9.0 tie within noise, so this sits on a plateau rather than a peak —
+// the sharp part is the threshold near 7, below which yield collapses back to
+// the old numbers. The quench costs a little against staying hot but ends cold,
+// so structures freeze for display instead of continuing to turn over.
+const ANNEAL = { Tstart: 7.5, Tend: 0.3, holdSteps: 42000, coolSteps: 8000 };
 // Bigger target rings need a longer search: every molecule carries just two
 // binding faces, so a 6- or 10-ring only closes after that many correct
 // encounters in a row, and the hold is where wrong bonds get a chance to
 // break. Small targets (2x2 blocks, trimers) close fine on the short anneal.
-const LONG_ANNEAL = { Tstart: 2.7, Tend: 0.3, holdSteps: 110000, coolSteps: 20000 };
+const LONG_ANNEAL = { Tstart: 7.5, Tend: 0.3, holdSteps: 110000, coolSteps: 20000 };
 // The soft engine binds through sticky sites that WCA shells keep ~1 unit
 // apart, so it needs a stronger charge constant and a smaller particle
 // diameter to reach the same binding-energy/kT ratios as the rigid engine.

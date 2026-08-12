@@ -266,14 +266,22 @@ sits far above where anyone would think to look (six seeds per protocol):
 
 | protocol | correct 8-rings | of all rings |
 | --- | --- | --- |
-| **steady kT = 7.5** | **12.0** | **72%** |
+| steady kT = 7.5 | **11.4** | 73% |
+| steady kT = 9.0 | 11.2 | **78%** |
+| **hold 7.5, then quench** (what the presets now use) | **10.8** | **69%** |
 | brief spikes to 14 above a 2.7 base | 10.7 | 62% |
-| steady 2.7 | 8.0 | 42% |
-| steady 11 | 7.7 | 77% |
+| steady 6.5 | 8.4 | 53% |
+| steady 2.7 | 8.3 | 48% |
 | steady 4.0 / 5.5 | 6.3 / 6.2 | ~40% |
 | hold 1.7 then cool — the original | 4.3 | 35% |
 
-Nearly **three times the yield and double the purity**, from temperature alone.
+Roughly **2.5x the yield and double the purity**, from temperature alone. The
+top three are twelve seeds; the rest six.
+
+7.5 and 9.0 tie within noise, so this is a plateau rather than a peak — the
+sharp part is the *threshold* near 7, below which yield collapses back to the
+old numbers. That matters for robustness: the value does not need to be found
+precisely, it needs to be above the threshold.
 
 The mechanism is a selectivity window, but at the level of whole clusters
 rather than single bonds. A misassembled or half-finished cluster is held by one
@@ -297,9 +305,24 @@ duly scores highest. It is also the safer choice numerically: peak kinetic energ
 0.6× equilibrium at a steady 7.5, against 1.9× while spiking to 14, where the
 explicit integrator starts to strain against `dt`.
 
-Worth stating plainly, because it took a wrong turn to find: an earlier sweep of
-this stopped at kT = 3.2, concluded the optimum was near 2.7, and missed the
-entire interesting regime.
+The presets hold at 7.5 and then quench rather than staying hot: it costs about
+half a ring against a steady hold but ends cold, so structures freeze for
+display instead of continuing to turn over. `dock-selectivity` keeps its own
+schedule — it runs a tenth of the charge and had already been tuned to end warm
+at 2.2, having arrived at the same principle independently.
+
+Worth stating plainly, because it took two wrong turns to find. An earlier sweep
+stopped at kT = 3.2, concluded the optimum was near 2.7, and missed the entire
+interesting regime. And the first cycling results were an artifact: the harness
+clamped `coolSteps: 0` to `1`, which completed the drift term on the first step
+and ran every cycling variant at kT ~ 0.1, producing a confident "cycling
+destroys ring formation" that was really "the system froze solid". Both were
+caught by re-deriving a result by hand and finding it disagreed with the tool.
+
+The UI exposes all of this directly — the temperature slider reaches 16, and a
+cycling panel sets the two rails, the period and the duty — because the useful
+temperature depends on the binding energy of whatever molecule you have drawn,
+and the numbers above are for the wedge.
 
 In the app the gain is larger still, because the old ceiling was the render
 loop rather than the engine: **1,200 → ~4,700 steps/s** at 32 molecules.
