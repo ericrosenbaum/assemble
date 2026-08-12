@@ -256,6 +256,49 @@ old default gives 3 of 5, which is the same story with error bars wide enough
 to hide it. The mis-sized rings were always forming; 32 molecules just never
 sampled enough of them to notice.
 
+### There is a purification temperature, and it is much hotter than expected
+
+Every preset inherited "hold hot, then cool slowly" by convention. Searching
+protocols instead of assuming one (`tools/anneal_search.mjs`, scored on rings of
+the *correct* size after an identical final quench, 320 molecules) found the
+convention is close to the worst option available, and that the useful regime
+sits far above where anyone would think to look (six seeds per protocol):
+
+| protocol | correct 8-rings | of all rings |
+| --- | --- | --- |
+| **steady kT = 7.5** | **12.0** | **72%** |
+| brief spikes to 14 above a 2.7 base | 10.7 | 62% |
+| steady 2.7 | 8.0 | 42% |
+| steady 11 | 7.7 | 77% |
+| steady 4.0 / 5.5 | 6.3 / 6.2 | ~40% |
+| hold 1.7 then cool — the original | 4.3 | 35% |
+
+Nearly **three times the yield and double the purity**, from temperature alone.
+
+The mechanism is a selectivity window, but at the level of whole clusters
+rather than single bonds. A misassembled or half-finished cluster is held by one
+or two bonds and comes apart somewhere around kT = 4–7. A *closed* ring is held
+by eight, and unbinding it needs several to fail at once, which does not happen
+until kT ≈ 11–14. Between those two thresholds the bath dissolves everything
+except finished structures while still letting them grow. Below the window the
+junk survives; above it the rings start going too — kT = 11 has the best purity
+of anything measured (77%) but fewer rings left to be pure.
+
+That also explains the dip at 4.0–5.5, which is otherwise baffling: it is the
+valley between the two regimes, hot enough to disrupt assembly and not hot
+enough to purify.
+
+Spiking works for the same reason and in proportion to how much time it spends
+at or above the window — spike height 6 → 9 → 14 gives 6.8 → 8.2 → 10.7 rings,
+and dose 8% → 15% gives 7.5 → 8.2. A steady hold simply spends *all* its time
+there. It is also the safer choice numerically: peak kinetic energy stays at
+0.6× equilibrium at a steady 7.5, against 1.9× while spiking to 14, where the
+explicit integrator starts to strain against `dt`.
+
+Worth stating plainly, because it took a wrong turn to find: an earlier sweep of
+this stopped at kT = 3.2, concluded the optimum was near 2.7, and missed the
+entire interesting regime.
+
 In the app the gain is larger still, because the old ceiling was the render
 loop rather than the engine: **1,200 → ~4,700 steps/s** at 32 molecules.
 
