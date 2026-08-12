@@ -3,6 +3,7 @@
 // harness in tools/capture.mjs.
 
 import { buildScenario, SCENARIOS } from './presets.js';
+import { TemperatureSchedule } from './sim/engine.js';
 import { RigidEngine } from './sim/rigid/rapier.js';
 import { createSoftEngine, detectBackends } from './sim/soft/index.js';
 import { WorkerSim } from './sim/simclient.js';
@@ -156,18 +157,47 @@ el('reset').addEventListener('click', async () => {
   state.engine?.free?.();
   await makeEngine();
 });
-el('anneal').addEventListener('click', () => {
+// One path for installing a schedule, whichever side the engine lives on. The
+// worker has to construct the TemperatureSchedule itself — a cloned object
+// arrives without its prototype — so both branches take a plain config.
+function setSchedule(cfg, { resetClock = false } = {}) {
   if (!state.engine) return;
   if (state.engine.kind === 'worker') {
-    state.engine.anneal(state.scenario.def.schedule);
+    state.engine.setSchedule(cfg, { resetClock });
   } else {
-    state.engine.stepCount = 0;
-    state.engine.schedule = state.scenario.schedule;
+    state.engine.schedule = cfg ? new TemperatureSchedule(cfg) : null;
+    if (resetClock) state.engine.stepCount = 0;
   }
+}
+
+// The cycling panel and the temperature slider both drive kT, so whichever the
+// user touched last wins: turning cycling on installs a schedule, moving the
+// slider clears it.
+function cycleConfig() {
+  return {
+    mode: 'cycle',
+    Thot: Number(el('cycleHot').value),
+    Tcold: Number(el('cycleCold').value),
+    periodSteps: Number(el('cyclePeriod').value),
+    duty: Number(el('cycleDuty').value),
+    holdSteps: 0,
+    coolSteps: 0, // no downward drift: the rails stay where they are set
+  };
+}
+
+function applyCycling() {
+  if (el('cycleOn').checked) setSchedule(cycleConfig(), { resetClock: true });
+}
+
+el('anneal').addEventListener('click', () => {
+  el('cycleOn').checked = false;
+  setSchedule(state.scenario.def.schedule, { resetClock: true });
 });
 el('scenario').addEventListener('change', async (e) => {
   state.scenarioName = e.target.value;
   state.overrides = {};
+  el('boxScale').value = '1';
+  el('boxScale').dispatchEvent(new Event('input'));
   state.engine?.free?.();
   await makeEngine();
 });
@@ -184,13 +214,16 @@ el('backend').addEventListener('change', async (e) => {
   }
 });
 el('count').addEventListener('change', async (e) => {
-  state.overrides.count = Math.max(2, Math.min(120, Number(e.target.value) | 0));
+  // The cap was 120 when the force kernel was O(N^2); it is linear now, and
+  // 3000 molecules draw in ~1 ms with the instanced renderer.
+  state.overrides.count = Math.max(2, Math.min(4000, Number(e.target.value) | 0));
   state.engine?.free?.();
   await makeEngine();
 });
 el('temp').addEventListener('input', (e) => {
   if (!state.engine) return;
   const kT = Number(e.target.value);
+  el('cycleOn').checked = false; // dragging the slider takes manual control
   if (state.engine.kind === 'worker') {
     state.engine.setParams({ kT }, { clearSchedule: true }); // manual overrides annealing
   } else {
@@ -199,10 +232,47 @@ el('temp').addEventListener('input', (e) => {
   }
   el('tempVal').textContent = kT.toFixed(2);
 });
+
+// ---- container size ----
+el('boxScale').addEventListener('change', async (e) => {
+  const scale = Number(e.target.value);
+  state.overrides.boxScale = scale;
+  state.engine?.free?.();
+  await makeEngine();
+});
+el('boxScale').addEventListener('input', (e) => {
+  const scale = Number(e.target.value);
+  // Side scales linearly, so density goes as 1/scale^2 — worth showing, since
+  // that is the number that actually changes the physics.
+  el('boxVal').textContent = `${scale.toFixed(2)}× side, ${(100 / (scale * scale)).toFixed(0)}% density`;
+});
+
+// ---- temperature cycling ----
+el('cycleOn').addEventListener('change', (e) => {
+  if (e.target.checked) applyCycling();
+  else setSchedule(null); // leave kT wherever the cycle happened to be
+});
+for (const [id, fmt] of [
+  ['cycleHot', (v) => Number(v).toFixed(1)],
+  ['cycleCold', (v) => Number(v).toFixed(1)],
+  ['cyclePeriod', (v) => `${v} steps`],
+  ['cycleDuty', (v) => `${Math.round(Number(v) * 100)}%`],
+]) {
+  el(id).addEventListener('input', (e) => {
+    el(`${id}Val`).textContent = fmt(e.target.value);
+    applyCycling(); // live-editable while running
+  });
+}
 el('speed').addEventListener('input', (e) => {
   state.stepsPerFrame = Number(e.target.value);
   el('speedVal').textContent = `${state.stepsPerFrame}×`;
 });
+
+// paint the initial readouts so they agree with the control positions
+for (const id of ['boxScale', 'cycleHot', 'cycleCold', 'cyclePeriod', 'cycleDuty']) {
+  el(id).dispatchEvent(new Event('input'));
+}
+el('cycleOn').checked = false;
 
 detectBackends().then((names) => {
   el('backendHint').textContent = `available compute: ${names.join(', ')}`;

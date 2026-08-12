@@ -47,8 +47,17 @@ export function buildScenario(name, overrides = {}) {
   const specs = mixture.map((m) => m.spec);
   const counts = mixture.map((m) => m.count);
 
+  // `boxScale` stretches the container without touching the molecule count, so
+  // the UI can trade density against room to move. It multiplies the side, so
+  // area — and therefore packing fraction — goes as the square: 1.4x the side
+  // is half the density. Applied to whichever box the scenario would otherwise
+  // have used, packing-derived or explicit.
   const side = def.packing ? boxForPacking(specs, counts, def.packing) : null;
-  const box = { w: def.boxW ?? side, h: def.boxH ?? side };
+  const scale = def.boxScale ?? 1;
+  const box = {
+    w: Math.round((def.boxW ?? side) * scale),
+    h: Math.round((def.boxH ?? side) * scale),
+  };
   const rng = makeRng(def.seed);
   const instances =
     specs.length > 1

@@ -135,8 +135,10 @@ export class WorkerSim {
     this.worker.postMessage({ type: 'params', params, clearSchedule });
   }
 
-  anneal(schedule) {
-    this.worker.postMessage({ type: 'anneal', schedule });
+  // cfg is a plain TemperatureSchedule config, or null to clear the schedule
+  // and leave the temperature wherever it is.
+  setSchedule(cfg, { resetClock = false } = {}) {
+    this.worker.postMessage({ type: 'schedule', cfg, resetClock });
   }
 
   free() {

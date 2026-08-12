@@ -14,6 +14,7 @@
 import { buildScenario } from '../presets.js';
 import { RigidEngine } from './rigid/rapier.js';
 import { createSoftEngine } from './soft/index.js';
+import { TemperatureSchedule } from './engine.js';
 import { stats } from './analysis.js';
 
 let engine = null;
@@ -185,10 +186,13 @@ self.onmessage = async (ev) => {
         if (msg.clearSchedule) engine.schedule = null;
       }
       break;
-    case 'anneal':
+    // Install a schedule from a plain config. It has to be constructed here:
+    // a structured-cloned object arrives without its prototype, so assigning
+    // it directly left engine.schedule without the .at() the step loop calls.
+    case 'schedule':
       if (engine) {
-        engine.stepCount = 0;
-        engine.schedule = msg.schedule ?? engine.schedule;
+        engine.schedule = msg.cfg ? new TemperatureSchedule(msg.cfg) : null;
+        if (msg.resetClock) engine.stepCount = 0;
       }
       break;
     case 'stats':
