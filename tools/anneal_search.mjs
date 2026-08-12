@@ -97,10 +97,22 @@ async function run(cfg, seed) {
 
   let firstHit = null; // step at which correct-ring count first reaches its final value
   let best = 0;
+  // Hot variants can push the explicit integrator past what dt supports, and a
+  // run that is quietly blowing up would otherwise just score badly and look
+  // like a bad protocol. Track kinetic energy against the Langevin equilibrium
+  // for the temperature in force, so overheating is reported, not inferred.
+  let peakKE = 0;
   const CHECK = Math.max(1000, Math.round(steps / 40));
   for (let i = 0; i < steps; i++) {
     e.step();
     if (i % CHECK !== 0) continue;
+    let ke = 0;
+    for (let m = 0; m < e.bodies.length; m++) {
+      const v = e.bodies[m].linvel();
+      const w = e.bodies[m].angvel();
+      ke += 0.5 * e._mass[m] * (v.x * v.x + v.y * v.y) + 0.5 * e._inertia[m] * w * w;
+    }
+    peakKE = Math.max(peakKE, ke / (1.5 * e.bodies.length * e.params.kT));
     const n = countRings(bondGraph(e.chargeWorld(), e.params)).filter((r) => r === target).length;
     if (n > best) {
       best = n;
@@ -136,8 +148,21 @@ async function run(cfg, seed) {
   const correct = rings.filter((r) => r === target).length;
   const comps = clusters(g);
   const bonded = comps.filter((c) => c.length > 1).reduce((a, c) => a + c.length, 0);
+  // Kinetic trapping shows up as molecules locked into clusters that are large
+  // enough to be committed but are not finished structures — a half-ring wedged
+  // against a neighbour it cannot get past. Count molecules in clusters of 3+
+  // that contain no correct-size ring: that is the population a hotter or
+  // spiked protocol is supposed to free up.
+  const ringMembers = new Set();
+  for (const c of comps) if (c.length === target) for (const m of c) ringMembers.add(m);
+  const trapped = comps
+    .filter((c) => c.length >= 3 && !c.every((m) => ringMembers.has(m)))
+    .reduce((a, c) => a + c.length, 0);
   e.free();
-  return { correct, survived, rings: rings.length, bonded, n: sc.instances.length, peak: best, firstHit };
+  return {
+    correct, survived, rings: rings.length, bonded, trapped,
+    n: sc.instances.length, peak: best, firstHit, peakKE,
+  };
 }
 
 const rows = [];
@@ -155,6 +180,8 @@ for (let vi = 0; vi < variants.length; vi++) {
     rings: mean((r) => r.rings),
     purity: mean((r) => (r.rings ? r.correct / r.rings : 0)),
     bondedPct: mean((r) => r.bonded / r.n),
+    trappedPct: mean((r) => r.trapped / r.n),
+    peakKE: mean((r) => r.peakKE),
     firstHit: mean((r) => r.firstHit ?? steps),
   };
   rows.push(row);
@@ -162,7 +189,8 @@ for (let vi = 0; vi < variants.length; vi++) {
     `${row.name.padEnd(30)} quenched=${row.correct.toFixed(1).padStart(5)}  ` +
       `survived=${row.survived.toFixed(1).padStart(5)}  ` +
       `allRings=${row.rings.toFixed(1).padStart(5)}  purity=${(row.purity * 100).toFixed(0).padStart(3)}%  ` +
-      `bonded=${(row.bondedPct * 100).toFixed(0).padStart(3)}%  reachedAt=${Math.round(row.firstHit)}`,
+      `trapped=${(row.trappedPct * 100).toFixed(0).padStart(3)}%  ` +
+      `peakKE=${row.peakKE.toFixed(1)}x  reachedAt=${Math.round(row.firstHit)}`,
   );
 }
 
