@@ -103,9 +103,15 @@ async function run(cfg, seed) {
   // for the temperature in force, so overheating is reported, not inferred.
   let peakKE = 0;
   const CHECK = Math.max(1000, Math.round(steps / 40));
+  // Molecules are scattered without a full overlap check, so the opening
+  // moments contain a harmless contact transient. Sampling through it reported
+  // 6.8x equilibrium for a preset that measures 1.1x once running — a startup
+  // spike read as an integrator failure. Same trap as test/stability.test.mjs,
+  // which already skips it.
+  const SETTLE = Math.max(CHECK, Math.round(steps * 0.05));
   for (let i = 0; i < steps; i++) {
     e.step();
-    if (i % CHECK !== 0) continue;
+    if (i < SETTLE || i % CHECK !== 0) continue;
     let ke = 0;
     for (let m = 0; m < e.bodies.length; m++) {
       const v = e.bodies[m].linvel();

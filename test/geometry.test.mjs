@@ -423,6 +423,390 @@ console.log('\n-- docking --');
   check('docking monomer is concave', !isConvex(dockingMonomer({}).verts));
 }
 
+// Three DIFFERENT shapes closing one ring.
+//
+// Turn-sum closure is necessary but NOT sufficient, and the first attempt here
+// proved it: a square, hexagon and 12-gon whose turns summed exactly to 2pi
+// over six members, and whose two 12-gons overlapped by 5 units — a 12-gon
+// contributes only pi/6 of turn while being 19 units across, so the ring came
+// out smaller than the molecules forming it. It closed on paper and could never
+// form. So both properties get checked: the turns close, and non-adjacent
+// members clear each other. (Adjacent members are bonded and meant to touch.)
+console.log('\n-- three-species rings --');
+for (const [label, tri, reps] of [
+  ['ternary-ring', [[12, 4, 0], [9, 3, 2], [6, 2, 1]], 2],
+  ['ternary-trimer', [[4, 1, 0], [12, 1, 2], [6, 1, 1]], 1],
+]) {
+  // sequence order is the one the keys enforce: species i accepts species i-1,
+  // so the chain runs backwards through the cycle
+  const seq = tri.map(([n, k, i]) => {
+    const key = keyCycle(i);
+    return facePair({
+      n, k, q: 0.8,
+      chargeT: key.outT, chargeTk: key.inT, signs: [key.outQ, key.inQ],
+      name: `${n}gon`,
+    });
+  });
+  const turnSum = seq.reduce((a, x) => a + x._turn, 0);
+  check(
+    `${label}: turns close the ring (${reps} x ${(turnSum / Math.PI).toFixed(3)}pi = ` +
+      `${((reps * turnSum) / Math.PI).toFixed(3)}pi)`,
+    Math.abs(reps * turnSum - 2 * Math.PI) < 1e-9,
+  );
+
+  const ring = [];
+  for (let r = 0; r < reps; r++) ring.push(...seq);
+  const poses = facePairChain(ring, ring.length + 1);
+  const d = Math.hypot(poses[ring.length].x - poses[0].x, poses[ring.length].y - poses[0].y);
+  let da = Math.abs(((poses[ring.length].angle - poses[0].angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI));
+  if (da > Math.PI) da = 2 * Math.PI - da;
+  check(`${label}: ${ring.length} members return to the start (${d.toExponential(1)})`, d < 1e-9 && da < 1e-9);
+
+  // centres closer than the sum of the two inradii must overlap
+  let worst = Infinity;
+  for (let a = 0; a < ring.length; a++) {
+    for (let b = a + 1; b < ring.length; b++) {
+      if (b === a + 1 || (a === 0 && b === ring.length - 1)) continue; // bonded pair
+      const dd = Math.hypot(poses[a].x - poses[b].x, poses[a].y - poses[b].y);
+      const inA = ring[a].boundingRadius() * Math.cos(Math.PI / ring[a].verts.length);
+      const inB = ring[b].boundingRadius() * Math.cos(Math.PI / ring[b].verts.length);
+      worst = Math.min(worst, dd - (inA + inB));
+    }
+  }
+  check(
+    `${label}: non-adjacent members clear each other (${
+      Number.isFinite(worst) ? worst.toFixed(2) : 'no non-adjacent pairs'
+    })`,
+    !Number.isFinite(worst) || worst > 0,
+  );
+}
+
+// --- regular-polygon family: does m = 2n/(n-2k) actually predict closure? ---
+//
+// Build the chain by mating bonds one at a time (each step only asserts that
+// two faces sit flush) and then ask whether molecule m lands back on molecule
+// 0. Nothing here assumes a ring radius, so agreement is real evidence for
+// the rule rather than a restatement of it.
+console.log('\n-- regular-polygon assembly predictions --');
+for (const [n, k, expect] of [
+  [4, 1, 4], // square, adjacent faces -> 2x2 pinwheel
+  [6, 1, 3], // hexagon -> trimer
+  [6, 2, 6], // hexagon -> 6-ring
+  [3, 1, 6], // triangle -> 6-membered rosette
+  [5, 2, 10], // pentagon -> 10-ring
+  [8, 3, 8], // octagon -> 8-ring
+]) {
+  const pred = predictedAssembly(n, k);
+  check(`n=${n} k=${k}: rule predicts a ${expect}-ring`, pred.kind === 'ring' && pred.size === expect);
+
+  const spec = facePair({ n, k });
+  const m = pred.size;
+  const poses = facePairChain(spec, m);
+
+  // closing bond: mating onto the last molecule must reproduce molecule 0
+  const closing = mateNextPose(spec, poses[m - 1]);
+  const dPos = Math.hypot(closing.x - poses[0].x, closing.y - poses[0].y);
+  const dAng = Math.abs(
+    Math.atan2(Math.sin(closing.angle - poses[0].angle), Math.cos(closing.angle - poses[0].angle)),
+  );
+  check(
+    `n=${n} k=${k}: ${m} copies close the ring (gap ${dPos.toExponential(2)}, ` +
+      `angle ${dAng.toExponential(2)})`,
+    dPos < 1e-9 && dAng < 1e-9,
+  );
+
+  // molecules must not overlap: every pair of centres at least an apothem apart
+  let minSep = Infinity;
+  for (let a = 0; a < m; a++) {
+    for (let b = a + 1; b < m; b++) {
+      minSep = Math.min(minSep, Math.hypot(poses[a].x - poses[b].x, poses[a].y - poses[b].y));
+    }
+  }
+  const apothem = spec.boundingRadius() * Math.cos(Math.PI / n);
+  check(`n=${n} k=${k}: ring has no self-overlap (min sep ${minSep.toFixed(2)})`, minSep > apothem);
+
+  // mating charges must coincide with opposite sign
+  const edges = spec.charges.map((c) => c.edge);
+  const sites = spec.chargeSites();
+  let maxGap = 0;
+  let signsOk = true;
+  for (let a = 0; a < m; a++) {
+    const b = (a + 1) % m;
+    const A = transformVerts(
+      sites.map(([x, y]) => [x, y]),
+      poses[a],
+    );
+    const B = transformVerts(
+      sites.map(([x, y]) => [x, y]),
+      poses[b],
+    );
+    for (let i = 0; i < sites.length; i++) {
+      if (edges[i] !== k % n) continue; // our − face
+      let best = Infinity;
+      let bq = 0;
+      for (let j = 0; j < sites.length; j++) {
+        if (edges[j] !== 0) continue; // partner's + face
+        const d = Math.hypot(A[i][0] - B[j][0], A[i][1] - B[j][1]);
+        if (d < best) {
+          best = d;
+          bq = sites[j][2];
+        }
+      }
+      maxGap = Math.max(maxGap, best);
+      if (Math.abs(sites[i][2] + bq) > 1e-9) signsOk = false;
+    }
+  }
+  check(`n=${n} k=${k}: mating charges coincide (gap ${maxGap.toExponential(2)})`, maxGap < 1e-9);
+  check(`n=${n} k=${k}: mating charges are equal and opposite`, signsOk);
+}
+
+// opposite faces -> straight chain, never closes
+for (const n of [4, 6, 8]) {
+  const pred = predictedAssembly(n, n / 2);
+  check(`n=${n} k=${n / 2}: predicted to run straight, not close`, pred.kind === 'chain');
+  const spec = facePair({ n, k: n / 2 });
+  const poses = facePairChain(spec, 5);
+  // every molecule keeps the same orientation and centres stay collinear
+  const sameAngle = poses.every(
+    (p) => Math.abs(Math.atan2(Math.sin(p.angle), Math.cos(p.angle))) < 1e-9,
+  );
+  const dx = poses[1].x - poses[0].x;
+  const dy = poses[1].y - poses[0].y;
+  const collinear = poses.every((p, i) => Math.hypot(p.x - i * dx, p.y - i * dy) < 1e-9);
+  check(`n=${n}: opposite-face chain stays aligned and straight`, sameAngle && collinear);
+}
+
+// non-integer m -> no closure predicted
+check('n=5 k=1: no ring closes (10/3 is not an integer)', predictedAssembly(5, 1).kind === 'open');
+
+// --- two-species mixtures ---
+// Ionic species (every face one sign) can only bond to the opposite species,
+// so rings alternate. Closure is the same turn-sum rule applied across both.
+console.log('\n-- mixed A/B rings --');
+for (const [na, ka, nb, kb, expect] of [
+  [3, 1, 6, 1, 4], // triangle + hexagon
+  [4, 1, 6, 3, 8], // square + hexagon spacer
+  [3, 1, 6, 3, 12], // triangle + hexagon spacer
+  [4, 1, 4, 1, 4], // square + square, alternating
+]) {
+  // species specificity from matched charge positions; the +/- asymmetry is
+  // kept so each molecule still has a direction and chains curl consistently
+  const A = facePair({ n: na, k: ka, chargeT: POLAR_T, chargeTk: POLAR_T });
+  const B = facePair({ n: nb, k: kb, chargeT: POLAR_MIRROR_T, chargeTk: POLAR_MIRROR_T });
+  const tag = `${na}gon(k${ka})A / ${nb}gon(k${kb})B`;
+
+  const pred = predictedMixedRing(A, B);
+  check(`${tag}: predicts a ${expect}-molecule ring`, pred.kind === 'ring' && pred.size === expect);
+
+  const m = pred.size;
+  const poses = facePairChain([A, B], m);
+  const seq = Array.from({ length: m }, (_, i) => (i % 2 === 0 ? A : B));
+  const closing = mateNextPose(seq[m - 1], poses[m - 1], seq[0]);
+  const dPos = Math.hypot(closing.x - poses[0].x, closing.y - poses[0].y);
+  const dAng = Math.abs(
+    Math.atan2(Math.sin(closing.angle - poses[0].angle), Math.cos(closing.angle - poses[0].angle)),
+  );
+  check(
+    `${tag}: ${m} molecules close (gap ${dPos.toExponential(2)}, angle ${dAng.toExponential(2)})`,
+    dPos < 1e-9 && dAng < 1e-9,
+  );
+
+  // alternating species around the ring, and no two centres on top of another
+  let minSep = Infinity;
+  for (let a = 0; a < m; a++)
+    for (let b = a + 1; b < m; b++)
+      minSep = Math.min(minSep, Math.hypot(poses[a].x - poses[b].x, poses[a].y - poses[b].y));
+  check(`${tag}: ring has no self-overlap (min sep ${minSep.toFixed(2)})`, minSep > 2);
+
+  // Each species must carry its layout on BOTH faces (that is what stops it
+  // binding its own kind), and the two species must use mirrored layouts.
+  const facesOf = (s) => [0, s._k % s.verts.length].map((e) =>
+    s.charges.filter((c) => c.edge === e).map((c) => c.t).sort((x, y) => x - y),
+  );
+  const [a0, ak] = facesOf(A);
+  const [b0] = facesOf(B);
+  const same = (u, v) => u.length === v.length && u.every((x, i) => Math.abs(x - v[i]) < 1e-9);
+  check(`${tag}: species A uses one layout on both faces`, same(a0, ak));
+  check(
+    `${tag}: species B layout mirrors A's (so only A–B registers)`,
+    same(b0, a0.map((t) => 1 - t).sort((x, y) => x - y)),
+  );
+  // and the +/- direction is retained, so molecules still have handedness
+  const signsA = new Set(A.charges.map((c) => Math.sign(c.q)));
+  check(`${tag}: species A keeps opposite-signed faces (handedness)`, signsA.size === 2);
+}
+
+// --- hub and arm: stars ---
+// A hub carries one sign on every face and an arm carries the other on a
+// single end, so the only possible bond is hub-arm. Check that n arms mate
+// flush onto an n-face hub, that their charges land on top of each other, and
+// that the arms do not run into one another.
+console.log('\n-- hub-and-arm stars --');
+{
+  // separating-axis overlap depth between two convex polygons; <= 0 is disjoint
+  const overlap = (A, B) => {
+    let best = Infinity;
+    for (const P of [A, B]) {
+      for (let i = 0; i < P.length; i++) {
+        const j = (i + 1) % P.length;
+        const ax = -(P[j][1] - P[i][1]);
+        const ay = P[j][0] - P[i][0];
+        const len = Math.hypot(ax, ay);
+        const nx = ax / len;
+        const ny = ay / len;
+        let a0 = Infinity;
+        let a1 = -Infinity;
+        let b0 = Infinity;
+        let b1 = -Infinity;
+        for (const p of A) {
+          const d = p[0] * nx + p[1] * ny;
+          a0 = Math.min(a0, d);
+          a1 = Math.max(a1, d);
+        }
+        for (const p of B) {
+          const d = p[0] * nx + p[1] * ny;
+          b0 = Math.min(b0, d);
+          b1 = Math.max(b1, d);
+        }
+        best = Math.min(best, Math.min(a1, b1) - Math.max(a0, b0));
+      }
+    }
+    return best;
+  };
+
+  for (const n of [3, 4, 6]) {
+    const H = hub({ n });
+    const A = rod({});
+    const tag = `${n}-armed star`;
+
+    // mate one arm onto each hub face
+    const poses = [];
+    for (let e = 0; e < n; e++) {
+      poses.push(mateNextPose({ ...H, _k: e, verts: H.verts }, { x: 0, y: 0, angle: 0 }, A));
+    }
+
+    const hSites = H.chargeSites();
+    const aSites = A.chargeSites();
+    let maxGap = 0;
+    let signsOk = true;
+    for (let e = 0; e < n; e++) {
+      const placed = transformVerts(
+        aSites.map(([x, y]) => [x, y]),
+        poses[e],
+      );
+      for (let i = 0; i < hSites.length; i++) {
+        if (H.charges[i].edge !== e) continue;
+        let best = Infinity;
+        let bq = 0;
+        for (let j = 0; j < placed.length; j++) {
+          const d = Math.hypot(hSites[i][0] - placed[j][0], hSites[i][1] - placed[j][1]);
+          if (d < best) {
+            best = d;
+            bq = aSites[j][2];
+          }
+        }
+        maxGap = Math.max(maxGap, best);
+        if (hSites[i][2] * bq >= 0) signsOk = false;
+      }
+    }
+    check(`${tag}: arm charges land on hub charges (gap ${maxGap.toExponential(2)})`, maxGap < 1e-9);
+    check(`${tag}: mating charges are opposite`, signsOk);
+
+    const armPolys = poses.map((p) => transformVerts(A.verts, p));
+    let worstArm = -Infinity;
+    for (let a = 0; a < n; a++) {
+      for (let b = a + 1; b < n; b++) worstArm = Math.max(worstArm, overlap(armPolys[a], armPolys[b]));
+    }
+    let worstHub = -Infinity;
+    for (const poly of armPolys) worstHub = Math.max(worstHub, overlap(poly, H.verts));
+    check(`${tag}: arms do not overlap each other (${worstArm.toFixed(3)})`, worstArm <= 1e-9);
+    check(`${tag}: arms do not overlap the hub (${worstHub.toFixed(3)})`, worstHub <= 1e-9);
+
+    // the whole design rests on like-species contacts being repulsive
+    const hubSigns = new Set(H.charges.map((c) => Math.sign(c.q)));
+    const armSigns = new Set(A.charges.map((c) => Math.sign(c.q)));
+    check(
+      `${tag}: hub-hub and arm-arm are repulsive (hub ${[...hubSigns]}, arm ${[...armSigns]})`,
+      hubSigns.size === 1 && armSigns.size === 1 && [...hubSigns][0] === -[...armSigns][0],
+    );
+    check(`${tag}: hub offers exactly ${n} binding faces`, new Set(H.charges.map((c) => c.edge)).size === n);
+  }
+
+  // a double-ended strut is divalent, so it bridges hubs instead of capping one
+  const strut = rod({ bothEnds: true });
+  check(
+    'double-ended strut has two charged faces',
+    new Set(strut.charges.map((c) => c.edge)).size === 2 && strut._valence === 2,
+  );
+}
+
+// --- docking into a concave binding site ---
+// The key's tip must fill the notch with its flanks flush, so the charges
+// coincide the same way face-mating does. A decoy with a different apex angle
+// must NOT — that mismatch is the entire selectivity mechanism, and it is
+// shape, not charge, since both keys carry identical charges.
+console.log('\n-- docking --');
+{
+  const R = notchedBlock({});
+  const seat = (key) => {
+    // receptor notch flank is edge 3 (right lip -> apex); the key presents its
+    // edge 0 (apex -> right lip)
+    const pose = mateNextPose({ ...R, _k: 3, verts: R.verts }, { x: 0, y: 0, angle: 0 }, key);
+    const rSites = R.chargeSites();
+    const kSites = key.chargeSites();
+    const placed = transformVerts(
+      kSites.map(([x, y]) => [x, y]),
+      pose,
+    );
+    let maxGap = 0;
+    let signsOk = true;
+    rSites.forEach(([x, y, q]) => {
+      let best = Infinity;
+      let bq = 0;
+      placed.forEach((p, j) => {
+        const d = Math.hypot(x - p[0], y - p[1]);
+        if (d < best) {
+          best = d;
+          bq = kSites[j][2];
+        }
+      });
+      maxGap = Math.max(maxGap, best);
+      if (q * bq >= 0) signsOk = false;
+    });
+    return { maxGap, signsOk };
+  };
+
+  const good = seat(wedgeKey({}));
+  check(`matching key seats flush (max gap ${good.maxGap.toExponential(2)})`, good.maxGap < 1e-9);
+  check('matching key charges are opposite the receptor s', good.signsOk);
+
+  // a decoy with a wider apex still mates one flank (that is how it docks at
+  // all) but cannot bring its far flank onto the notch's other wall
+  const decoy = seat(wedgeKey({ apexAngle: Math.PI / 2 }));
+  check(
+    `decoy key cannot seat — far flank misses by ${decoy.maxGap.toFixed(2)}`,
+    decoy.maxGap > 0.5,
+  );
+  check(
+    'decoy is penalised by shape, not charge (identical charge magnitudes)',
+    JSON.stringify(wedgeKey({}).charges.map((c) => c.q)) ===
+      JSON.stringify(wedgeKey({ apexAngle: Math.PI / 2 }).charges.map((c) => c.q)),
+  );
+
+  // same-species contacts must repel, as with the star family
+  const rSigns = new Set(R.charges.map((c) => Math.sign(c.q)));
+  const kSigns = new Set(wedgeKey({}).charges.map((c) => Math.sign(c.q)));
+  check(
+    `receptor-receptor and key-key repel (receptor ${[...rSigns]}, key ${[...kSigns]})`,
+    rSigns.size === 1 && kSigns.size === 1 && [...rSigns][0] === -[...kSigns][0],
+  );
+
+  // the receptor is genuinely concave — otherwise there is no pocket at all
+  check('receptor outline is concave (has a real pocket)', !isConvex(R.verts));
+  check('key outline is convex (needs no decomposition)', isConvex(wedgeKey({}).verts));
+  check('docking monomer is concave', !isConvex(dockingMonomer({}).verts));
+}
+
 // Three DIFFERENT shapes closing one ring. Nothing about a square, a hexagon
 // and a 12-gon makes them fit together — the ring closes because their turns
 // happen to sum correctly: pi/2 + pi/3 + pi/6 = pi for one of each, so two of

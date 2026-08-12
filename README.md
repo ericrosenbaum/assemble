@@ -505,6 +505,76 @@ between them. `salt-lattice` is the two-species version of a tiler — with
 `+` and `−` squares alternating, it builds a 2D analogue of a rock-salt
 crystal.
 
+### Three components
+
+Two species can be told apart by charge *position* — one layout on both faces,
+its mirror on the other. Three cannot, and that was measured before anything was
+built on it: with three position-keyed species, unwanted pairings still ran at
+**60–85%** of the wanted ones. With every out-face `+` and every in-face `−`,
+any pairing already attracts, and moving charges along the face only weakens it.
+
+What works is a *sign* pattern per interface — complementary base pairing rather
+than shape of key. A face carries signs `S`, its partner `−S` at mirrored
+positions, and interface energy goes as the dot product `S·S'`, so orthogonal
+patterns cancel to nothing. `KEY_SIGNS` uses rows of a Hadamard matrix, chosen
+at length 8 so each is also the negative of its own reverse — which additionally
+makes a face mated back-to-front *repel* rather than merely bind weakly. An
+exhaustive search found no triple with both properties at length 4 or 6. Wrong
+pairings now measure **18%** of intended, and `test/keys.test.mjs` measures all
+nine ordered pairings on every run.
+
+Two things the measurements forced, neither of which was guessable:
+
+- The three interfaces came out at **−150, −83 and −40**. Clustered patterns
+  (`++++----`) gain extra attraction from neighbouring like signs; alternating
+  ones (`+-+-+-+-`) cancel. Three interfaces differing fourfold cannot share one
+  temperature, so each key carries a magnitude of `sqrt(target/measured)`. All
+  three are now −51.
+- Eight charge pairs per interface totalled −80 at unit charge, twice the
+  wedge's −42, and the first run measured **6.8× equilibrium kinetic energy** —
+  the integrator failing at `dt = 1/60`, not a result. `q = 0.8` brings it back
+  into the tuned range.
+
+| preset | components | observed |
+| --- | --- | --- |
+| `ternary-trimer` | square + hexagon + 12-gon, 1:1:1 | **7 closed trimers**, every one exactly 3 |
+| `capped-rods` | rod A + rod B + terminator | rods 6–8 long, 50/50 caps used, 262/270 bonded |
+| `ternary-ring` | 12-gon + hexagon + 9-gon, 6-rings | chains to 6, **no closure** |
+
+![1:1:1 trimers](results/ternary-trimer.gif)
+![capped rods](results/capped-rods.gif)
+
+*Three shapes closing into defined trimers; and rods whose length is set by how
+much terminator is present.*
+
+`capped-rods` is the clearest piece of design here. A and B alternate into
+straight rods (`n=6, k=3` turns by zero, so the chain never curls), and the cap
+carries **the same in-face as B** — bit-identical, so it is not a better partner,
+only a differently-terminated one. It binds an A end and stops it growing
+because it has no out-face of its own. Rod length is then set by cap
+concentration rather than by the shapes, which is the polymer chemist's
+chain-transfer trick.
+
+`ternary-trimer` closes in a single pass: turns of π/2 + 2π/3 + 5π/6 make a full
+2π with one of each, so the assembly finishes at three and has nowhere to grow.
+The three shapes are very different in size, and that is forced rather than
+chosen — a shape contributing only a small turn per bond needs many edges, so a
+12-gon with the same edge length as a square has eleven times its area.
+
+**`ternary-ring` is an honest failure, and the way it failed is the useful
+part.** The first attempt paired a square, hexagon and 12-gon whose turns summed
+*exactly* to 2π over six members — and whose two 12-gons then overlapped by 5
+units. A 12-gon contributes only π/6 of turn while being 19 units across, so the
+ring closed on paper and was smaller than the molecules forming it. It could
+never assemble, and the geometry test passed it, because that test checked
+turn-sum closure and not self-overlap. Both scenarios above were then chosen by
+searching (n, k) triples for closure *and* clearance between non-adjacent
+members, and the test now checks both. Even with a geometry that fits (5.4 units
+of clearance) and at double the usual density, the 6-ring still does not close —
+chains reach 6 members and stop one bond short, the same cyclisation limit the
+two-species 8- and 12-rings hit, made worse by needing three species in strict
+rotation.
+
 ### Hubs and arms: stars
 
 The article's other example is the open-ended "make your own molecule" page —

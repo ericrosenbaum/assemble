@@ -549,20 +549,48 @@ export const SCENARIOS = {
   // test/keys.test.mjs.
   //
   // The three shapes are deliberately different, and the ring closes because
-  // their turns sum correctly rather than because they match: a square turns
-  // π/2, a hexagon π/3 and a 12-gon π/6, which is π for one of each and 2π for
-  // the six-membered ring. Two of each, in a fixed cyclic order that the keys
-  // are what enforce.
+  // their turns sum correctly rather than because they match.
+  //
+  // Turn-sum closure is necessary but not sufficient, which cost a rebuild: the
+  // first attempt paired a square, a hexagon and a 12-gon whose turns summed
+  // perfectly to 2pi over six members — and whose two 12-gons then overlapped
+  // by 5 units, because a 12-gon contributes only pi/6 of turn while being 19
+  // units across. The ring was smaller than the molecules forming it, so it
+  // could never assemble. Both scenarios below were picked by searching (n, k)
+  // triples for turn-sum closure *and* clearance between non-adjacent members,
+  // and test/geometry.test.mjs now checks both.
   'ternary-ring': {
-    label: 'square + hexagon + 12-gon → strict 6-rings',
+    label: '12-gon + hexagon + 9-gon → strict 6-rings',
+    config: {
+      species: [
+        { spec: () => keyedPolygon(12, 4, 0, 'dodecagon', '#e8b04b'), count: 44 },
+        { spec: () => keyedPolygon(6, 2, 1, 'hexagon', '#6c91bf'), count: 44 },
+        { spec: () => keyedPolygon(9, 3, 2, 'nonagon', '#7fb069'), count: 44 },
+      ],
+      // 0.4 rather than the usual 0.2: these are large shapes, and at 0.2 they
+      // met too rarely to get past 5-member chains (60/132 bonded against
+      // 103/132 here). Closure still does not happen — see the README.
+      packing: 0.4,
+      seed: 41,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
+  // A defined complex rather than a polymer: exactly one of each shape, closing
+  // into a three-molecule ring. Turns of pi/2 + 2pi/3 + 5pi/6 make a full 2pi
+  // in a single pass, so the assembly has nowhere to grow — it finishes at
+  // three and stops, which is what a stoichiometric complex looks like.
+  'ternary-trimer': {
+    label: 'square + hexagon + 12-gon → 1:1:1 trimers',
     config: {
       species: [
         { spec: () => keyedPolygon(4, 1, 0, 'square', '#e8b04b'), count: 60 },
-        { spec: () => keyedPolygon(6, 2, 1, 'hexagon', '#6c91bf'), count: 60 },
-        { spec: () => keyedPolygon(12, 5, 2, 'dodecagon', '#7fb069'), count: 60 },
+        { spec: () => keyedPolygon(6, 1, 1, 'hexagon', '#6c91bf'), count: 60 },
+        { spec: () => keyedPolygon(12, 1, 2, 'dodecagon', '#c76f8a'), count: 60 },
       ],
       packing: 0.2,
-      seed: 41,
+      seed: 43,
       params: { ...TUNED },
       schedule: { ...LONG_ANNEAL },
     },
