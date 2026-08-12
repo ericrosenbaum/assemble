@@ -215,6 +215,61 @@ export const POLAR_T = [0.08, 0.2, 0.38];
 // outright, because same-role faces end up carrying the same sign.
 export const POLAR_MIRROR_T = POLAR_T.map((t) => 1 - t);
 
+// Mutually orthogonal interface keys, for assemblies of three or more species.
+//
+// Two species need only one key and its mirror, and *position* patterns are
+// enough: POLAR_T on both faces versus its mirror on both faces. That does not
+// extend. With every out-face + and every in-face −, any out/in pairing already
+// attracts strongly, and moving charges around only weakens it — measured over
+// three position-keyed species, unwanted pairings still reached 60–85% of the
+// wanted ones. Position alone cannot separate three species.
+//
+// What does is a *sign* pattern per interface — complementary base pairing
+// rather than shape of key. A face carries signs S; its partner carries −S at
+// mirrored positions, so every pair attracts. An unwanted partner carries some
+// other pattern S', and the interface energy goes as the dot product S·S', so
+// choosing mutually orthogonal patterns makes wrong pairings cancel to nothing.
+//
+// These are rows of a Hadamard matrix, which are pairwise orthogonal (wrong
+// pairings net zero) and, at length 8, can also be chosen so that each is the
+// negative of its own reverse. That second property matters: a face mated
+// back-to-front sees the pattern reversed, and S·reverse(−S) = +8 makes a
+// reversed junction maximally *repulsive* rather than merely weak. An
+// exhaustive search over lengths 4 and 6 found no triple with both properties.
+export const KEY_SIGNS = [
+  [+1, +1, +1, +1, -1, -1, -1, -1],
+  [+1, +1, -1, -1, +1, +1, -1, -1],
+  [+1, -1, +1, -1, +1, -1, +1, -1],
+];
+// Spread across the face, clear of the corners.
+export const KEY_POS = KEY_SIGNS[0].map((_, i) => 0.1 + (0.8 * i) / (KEY_SIGNS[0].length - 1));
+
+// One link of a cycle of `n` species that can assemble in only one cyclic
+// order: species i presents key i on its out-face, and the complement of key
+// i−1 on its in-face, so i can only follow i−1. With three species the only
+// closed structure is A-B-C repeating.
+// Per-key charge magnitudes, so all three interfaces bind with the same
+// strength. Without this the clustered pattern (++++----) measures -150 while
+// the alternating one (+-+-+-+-) measures -40: neighbouring like signs add to
+// the on-top attraction in the first and cancel it in the second. Three
+// interfaces that differ by 4x cannot share one temperature — the weak one is
+// still melting when the strong one has frozen. Interface energy goes as the
+// square of the key's magnitude, so these are sqrt(target / measured), then
+// re-measured (see test/keys.test.mjs).
+export const KEY_SCALE = [0.73, 0.98, 1.42];
+
+export function keyCycle(i, n = KEY_SIGNS.length) {
+  const prev = (i - 1 + n) % n;
+  return {
+    outT: KEY_POS,
+    outQ: KEY_SIGNS[i % n].map((q) => q * KEY_SCALE[i % n]),
+    // mirrored positions and negated signs — the complement of the partner's
+    // out-face, so charge j lands exactly on charge j of the face it accepts
+    inT: KEY_POS.map((t) => 1 - t),
+    inQ: KEY_SIGNS[prev].map((s) => -s * KEY_SCALE[prev]),
+  };
+}
+
 // Charges on one pair of faces: +q on edge 0, −q on edge k.
 // The − positions are mirrored (1 − t) because mating faces run in opposite
 // directions, so this is what puts the charges on top of each other.
@@ -250,10 +305,14 @@ export function facePair({
 } = {}) {
   const radius = circumradiusForEdge(n, edgeLength);
   const tk = chargeTk ?? chargeT.map((t) => 1 - t);
+  // A sign may be a single value for the whole face, or a per-charge pattern —
+  // the latter is what lets three or more species have orthogonal interfaces
+  // (see KEY_SIGNS).
+  const signAt = (side, i) => (Array.isArray(signs[side]) ? signs[side][i] : signs[side]);
   const charges = [];
   chargeT.forEach((t, i) => {
-    charges.push({ edge: 0, t, q: q * signs[0] });
-    charges.push({ edge: k % n, t: tk[i], q: q * signs[1] });
+    charges.push({ edge: 0, t, q: q * signAt(0, i) });
+    charges.push({ edge: k % n, t: tk[i], q: q * signAt(1, i) });
   });
   const spec = new MoleculeSpec({
     name: name ?? `${n}gon-k${k}`,

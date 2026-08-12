@@ -16,6 +16,7 @@ import {
   notchedBlock,
   wedgeKey,
   dockingMonomer,
+  keyCycle,
 } from '../src/shapes.js';
 import { isConvex } from '../src/geometry/decompose.js';
 
@@ -420,6 +421,32 @@ console.log('\n-- docking --');
   check('receptor outline is concave (has a real pocket)', !isConvex(R.verts));
   check('key outline is convex (needs no decomposition)', isConvex(wedgeKey({}).verts));
   check('docking monomer is concave', !isConvex(dockingMonomer({}).verts));
+}
+
+// Three DIFFERENT shapes closing one ring. Nothing about a square, a hexagon
+// and a 12-gon makes them fit together — the ring closes because their turns
+// happen to sum correctly: pi/2 + pi/3 + pi/6 = pi for one of each, so two of
+// each is a full 2pi. If any of the three shapes changes, this stops closing,
+// which is exactly what the test is for.
+{
+  const mk = (n, k, i, nm) => {
+    const key = keyCycle(i);
+    return facePair({
+      n, k, edgeLength: 5,
+      chargeT: key.outT, chargeTk: key.inT, signs: [key.outQ, key.inQ], name: nm,
+    });
+  };
+  const seq = [mk(4, 1, 0, 'square'), mk(12, 5, 2, 'dodecagon'), mk(6, 2, 1, 'hexagon')];
+  const turnSum = seq.reduce((a, s) => a + s._turn, 0);
+  check(
+    `ternary turns sum to pi (${(turnSum / Math.PI).toFixed(4)}pi)`,
+    Math.abs(turnSum - Math.PI) < 1e-12,
+  );
+  const poses = facePairChain(seq, 7);
+  const d = Math.hypot(poses[6].x - poses[0].x, poses[6].y - poses[0].y);
+  let da = Math.abs(((poses[6].angle - poses[0].angle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI));
+  if (da > Math.PI) da = 2 * Math.PI - da;
+  check(`ternary 6-ring closes (pos err ${d.toExponential(1)}, angle err ${da.toExponential(1)})`, d < 1e-9 && da < 1e-9);
 }
 
 // tilers: opposite faces must carry opposite charge, or the sheet can't bond

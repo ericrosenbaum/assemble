@@ -13,9 +13,43 @@ import {
   POLAR_T,
   POLAR_MIRROR_T,
   MoleculeSpec,
+  keyCycle,
 } from './shapes.js';
 import { TemperatureSchedule, scatterInstances, scatterMixture } from './sim/engine.js';
 import { makeRng } from './rng.js';
+
+// One link of a keyed cycle as an n-gon: presents key i on its out-face and the
+// complement of key i−1 on its in-face, so it can only follow species i−1.
+// q = 0.8 rather than 1: eight charge pairs per interface total about -80
+// energy units at unit charge, twice the wedge's -42 that everything else here
+// is tuned around. That is not merely "stronger" — it is too stiff for
+// dt = 1/60, and measured 6.8x equilibrium kinetic energy, which is the
+// integrator coming apart rather than a thermodynamic result. Scaling the
+// charge brings the interface back into the tuned range (energy goes as q^2).
+const keyedPolygon = (n, k, i, name, color, cycle = 3) => {
+  const key = keyCycle(i, cycle);
+  return facePair({
+    n,
+    k,
+    q: 0.8,
+    chargeT: key.outT,
+    chargeTk: key.inT,
+    signs: [key.outQ, key.inQ],
+    name,
+    color,
+  });
+};
+
+// A terminator: carries only the in-face that accepts species i, and nothing
+// else. Built from the same helper and then stripped of its out-face, so the
+// binding interface is bit-identical to the one it competes with — the cap wins
+// or loses on concentration, not on being a better partner.
+const keyedCap = (i, cycle, name, color) => {
+  const spec = keyedPolygon(4, 1, (i + 1) % cycle, name, color, cycle);
+  spec.charges = spec.charges.filter((c) => c.edge === spec._k % spec._n);
+  spec._capOf = i;
+  return spec;
+};
 
 // A two-species pair. Each species keeps + on its out-face and − on its
 // in-face, which is what gives a molecule a direction and makes chains curl
@@ -500,6 +534,56 @@ export const SCENARIOS = {
       count: 240,
       packing: 0.2,
       seed: 33,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
+  // --- three-component assemblies -----------------------------------------
+  //
+  // Two species can be told apart by charge *position* alone. Three cannot:
+  // with every out-face + and every in-face −, any pairing already attracts and
+  // moving charges around only weakens it (measured: wrong pairs still at
+  // 60–85% of wanted). These use orthogonal *sign* patterns instead — see
+  // KEY_SIGNS — which puts wrong pairings at 18% of wanted, and is checked by
+  // test/keys.test.mjs.
+  //
+  // The three shapes are deliberately different, and the ring closes because
+  // their turns sum correctly rather than because they match: a square turns
+  // π/2, a hexagon π/3 and a 12-gon π/6, which is π for one of each and 2π for
+  // the six-membered ring. Two of each, in a fixed cyclic order that the keys
+  // are what enforce.
+  'ternary-ring': {
+    label: 'square + hexagon + 12-gon → strict 6-rings',
+    config: {
+      species: [
+        { spec: () => keyedPolygon(4, 1, 0, 'square', '#e8b04b'), count: 60 },
+        { spec: () => keyedPolygon(6, 2, 1, 'hexagon', '#6c91bf'), count: 60 },
+        { spec: () => keyedPolygon(12, 5, 2, 'dodecagon', '#7fb069'), count: 60 },
+      ],
+      packing: 0.2,
+      seed: 41,
+      params: { ...TUNED },
+      schedule: { ...LONG_ANNEAL },
+    },
+  },
+
+  // Stoichiometric length control. A and B alternate into a straight rod
+  // (n=6, k=3 turns by zero, so the chain never curls), and the cap carries the
+  // same in-face as B — so it competes for an A end, binds, and stops that end
+  // growing because it has no out-face of its own. Rod length is then set by
+  // how much cap is present rather than by the shapes, which is the polymer
+  // chemist's chain-transfer trick.
+  'capped-rods': {
+    label: 'A + B rods, terminated by a cap',
+    config: {
+      species: [
+        { spec: () => keyedPolygon(6, 3, 0, 'rod A', '#e8b04b', 2), count: 110 },
+        { spec: () => keyedPolygon(6, 3, 1, 'rod B', '#8a7fb0', 2), count: 110 },
+        { spec: () => keyedCap(0, 2, 'cap', '#c76f8a'), count: 50 },
+      ],
+      packing: 0.2,
+      seed: 42,
       params: { ...TUNED },
       schedule: { ...LONG_ANNEAL },
     },
